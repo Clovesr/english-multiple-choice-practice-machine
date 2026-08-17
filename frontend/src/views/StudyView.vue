@@ -38,6 +38,20 @@ const lastFetchHadCards = ref(true)
 
 const current = computed(() => queue.value[0] ?? null)
 
+// 同词去重（Anki bury siblings 的会话级过渡实现，词级调度重构由后端进行中）：
+// 本次学习会话中每个词只出现一次；已评分词的其余题型卡不再进入本次会话。
+const encounteredLemmas = new Set<string>()
+
+function dedupeByWord(cards: StudyCard[]): StudyCard[] {
+  const batchSeen = new Set<string>()
+  return cards.filter((card) => {
+    const key = card.entry.lemma.toLowerCase()
+    if (encounteredLemmas.has(key) || batchSeen.has(key)) return false
+    batchSeen.add(key)
+    return true
+  })
+}
+
 const cardTypeLabels: Record<CardType, string> = {
   forward: '认词', reverse: '辨义', listening: '听音', spelling: '拼写', cloze: '挖空', collocation: '搭配',
 }
@@ -51,8 +65,10 @@ async function load(refetch = false) {
   loadError.value = ''
   try {
     session.value = await getStudySession(20)
-    queue.value = [...session.value.cards]
-    lastFetchHadCards.value = queue.value.length > 0
+    lastFetchHadCards.value = session.value.cards.length > 0
+    queue.value = dedupeByWord(session.value.cards)
+    // 整批都是本会话已见过的词 → 视为清空，避免无限补拉
+    if (!queue.value.length && session.value.cards.length) lastFetchHadCards.value = false
     void loadOverview()
   } catch (cause) {
     const error = cause as ApiError
@@ -104,6 +120,7 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
   const card = current.value
   try {
     await gradeStudyCard(card.card_id, { attempt_id: newAttemptId(), ...payload })
+    encounteredLemmas.add(card.entry.lemma.toLowerCase())
     queue.value = queue.value.slice(1)
     doneCount.value += 1
     if (session.value) session.value.counts.done_today += 1
@@ -121,6 +138,7 @@ async function onSkip() {
   const card = current.value
   try {
     await suspendStudyCard(card.card_id)
+    encounteredLemmas.add(card.entry.lemma.toLowerCase())
     queue.value = queue.value.slice(1)
     if (!queue.value.length && lastFetchHadCards.value) await load(true)
   } catch {
