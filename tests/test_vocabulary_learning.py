@@ -204,6 +204,9 @@ class VocabularyLearningApiTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["seeded_total"], 1)
         self.assertEqual(payload["counts"]["visible_total"], 4)
         self.assertEqual(payload["counts"]["review"], 1)
+        self.assertEqual(payload["total"], 4)
+        self.assertEqual(payload["limit"], 120)
+        self.assertEqual(payload["offset"], 0)
 
         all_entries = self.client.get("/api/vocabulary", params={"scope": "all"})
         self.assertEqual(all_entries.status_code, 200, all_entries.text)
@@ -215,6 +218,17 @@ class VocabularyLearningApiTests(unittest.TestCase):
             if item["term"] == "seeded-unseen"
         )
         self.assertFalse(unseen["is_collected"])
+
+        paged = self.client.get(
+            "/api/vocabulary",
+            params={"scope": "all", "limit": 2, "offset": 1},
+        )
+        self.assertEqual(paged.status_code, 200, paged.text)
+        self.assertEqual(len(paged.json()["items"]), 2)
+        self.assertEqual(paged.json()["total"], 5)
+        self.assertEqual(paged.json()["limit"], 2)
+        self.assertEqual(paged.json()["offset"], 1)
+        self.assertEqual(paged.json()["counts"]["visible_total"], 5)
 
         due_entries = self.client.get(
             "/api/vocabulary", params={"status": "review"}

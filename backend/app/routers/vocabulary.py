@@ -109,10 +109,16 @@ def list_entries(
     status: str = "all",
     search: str = "",
     scope: Literal["collected", "all"] = "collected",
+    limit: int = Query(120, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     connection: sqlite3.Connection = Depends(get_db),
 ) -> dict:
     conditions = ["1 = 1"]
-    params: dict[str, object] = {"due_now": utc_now()}
+    params: dict[str, object] = {
+        "due_now": utc_now(),
+        "limit": limit,
+        "offset": offset,
+    }
     if scope == "collected":
         conditions.append(COLLECTED_ENTRY_SQL)
     if status == "frequent":
@@ -134,6 +140,13 @@ def list_entries(
             "OR contextual_meaning LIKE :search OR common_meaning LIKE :search)"
         )
         params["search"] = f"%{search.strip()}%"
+    where_sql = " AND ".join(conditions)
+    filtered_total = int(
+        connection.execute(
+            f"SELECT COUNT(*) FROM vocabulary_entries WHERE {where_sql}",
+            params,
+        ).fetchone()[0]
+    )
     rows = connection.execute(
         f"""
         SELECT *,
@@ -146,10 +159,11 @@ def list_entries(
                CASE WHEN encounter_count >= 2 OR manually_frequent = 1 THEN 1 ELSE 0 END AS is_frequent,
                CASE WHEN {COLLECTED_ENTRY_SQL} THEN 1 ELSE 0 END AS is_collected
         FROM vocabulary_entries
-        WHERE {' AND '.join(conditions)}
+        WHERE {where_sql}
         ORDER BY
                  CASE WHEN datetime(last_seen_at) >= datetime('now', '-7 days') THEN 0 ELSE 1 END,
-                 is_frequent DESC, encounter_count DESC, last_seen_at DESC
+                 is_frequent DESC, encounter_count DESC, last_seen_at DESC, id DESC
+        LIMIT :limit OFFSET :offset
         """,
         params,
     ).fetchall()
@@ -184,7 +198,13 @@ def list_entries(
     local_map = local_similar_matches(connection, [item["id"] for item in items])
     for item in items:
         item["local_similar"] = local_map.get(item["id"], [])
-    return {"items": items, "counts": dict(counts)}
+    return {
+        "items": items,
+        "total": filtered_total,
+        "limit": limit,
+        "offset": offset,
+        "counts": dict(counts),
+    }
 
 
 @router.get("/home")

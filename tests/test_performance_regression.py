@@ -213,6 +213,8 @@ class RealScalePerformanceRegressionTests(unittest.TestCase):
                 status="all",
                 search="definitely-not-in-the-fixture",
                 scope="collected",
+                limit=120,
+                offset=0,
                 connection=connection,
             )
             self.assertLess(elapsed, MAX_RESPONSE_SECONDS)
