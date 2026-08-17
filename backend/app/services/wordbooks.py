@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .dictionary import DictionaryUnavailableError, bundled_entries, dictionary_summary
-from .vocabulary_cards import generate_cards_for_entry, utc_now
+from .vocabulary_cards import CARD_TYPES, generate_cards_for_entry, utc_now
 from .vocabulary_learning import create_or_match_imported_entry, upsert_dictionary_entry
 
 
@@ -18,7 +18,6 @@ BUILTIN_WORDBOOKS = {
     "cet6": "CET6 核心词书",
     "ky": "考研英语核心词书",
 }
-
 
 def _plan_payload(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
@@ -279,6 +278,90 @@ def list_wordbook_entries(
     }
 
 
+def _wordbook_entry_order_sql(order: str) -> str:
+    if order == "random":
+        return "RANDOM()"
+    if order == "sequence":
+        return "we.sequence, e.id"
+    return (
+        "CASE WHEN COALESCE(we.frequency_rank, 0) > 0 THEN 0 ELSE 1 END, "
+        "COALESCE(we.frequency_rank, 2147483647), we.sequence, e.id"
+    )
+
+
+def generate_wordbook_card_pool(
+    connection: sqlite3.Connection,
+    wordbook_id: int,
+    *,
+    new_order: str,
+    max_entries: int,
+    generation_source: str,
+    target_card_count: int | None = None,
+    enabled_card_types: Iterable[str] = CARD_TYPES,
+) -> int:
+    """Lazily materialize a bounded card pool without touching existing progress."""
+
+    if max_entries <= 0:
+        return 0
+    enabled = tuple(dict.fromkeys(enabled_card_types))
+    if not enabled:
+        return 0
+    available = 0
+    if target_card_count is not None:
+        placeholders = ",".join("?" for _ in enabled)
+        available = int(
+            connection.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM wordbook_entries AS we
+                JOIN vocabulary_entries AS e ON e.id = we.entry_id
+                JOIN vocabulary_cards AS vc ON vc.entry_id = e.id
+                JOIN review_items AS ri
+                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+                WHERE we.wordbook_id = ?
+                  AND e.deleted_at IS NULL
+                  AND e.study_status NOT IN ('known','mastered','ignored','paused')
+                  AND ri.state = 'new' AND ri.manually_suspended = 0
+                  AND vc.card_type IN ({placeholders})
+                """,
+                (wordbook_id, *enabled),
+            ).fetchone()[0]
+        )
+        if available >= target_card_count:
+            return 0
+
+    candidates = connection.execute(
+        f"""
+        SELECT we.entry_id
+        FROM wordbook_entries AS we
+        JOIN vocabulary_entries AS e ON e.id = we.entry_id
+        WHERE we.wordbook_id = ?
+          AND e.deleted_at IS NULL
+          AND e.study_status NOT IN ('known','mastered','ignored','paused')
+          AND NOT EXISTS (
+              SELECT 1 FROM vocabulary_cards AS vc WHERE vc.entry_id = e.id
+          )
+        ORDER BY {_wordbook_entry_order_sql(new_order)}
+        LIMIT ?
+        """,
+        (wordbook_id, max_entries),
+    ).fetchall()
+    enabled_set = set(enabled)
+    generated = 0
+    for row in candidates:
+        cards = generate_cards_for_entry(
+            connection,
+            int(row["entry_id"]),
+            generation_source=generation_source,
+        )
+        generated += len(cards)
+        if target_card_count is not None:
+            available += sum(card["card_type"] in enabled_set for card in cards)
+            if available >= target_card_count:
+                break
+    return generated
+
+
 def activate_wordbook_plan(
     connection: sqlite3.Connection,
     wordbook_id: int,
@@ -288,8 +371,8 @@ def activate_wordbook_plan(
 ) -> dict[str, Any]:
     if new_order not in {"frequency", "sequence", "random"}:
         raise ValueError("new_order 必须是 frequency、sequence 或 random")
-    if not 1 <= daily_new <= 500:
-        raise ValueError("daily_new 必须在 1 到 500 之间")
+    if not 0 <= daily_new <= 500:
+        raise ValueError("daily_new 必须在 0 到 500 之间")
     install_bundled_wordbooks(connection)
     if connection.execute(
         "SELECT 1 FROM wordbooks WHERE id = ? AND status = 'active'", (wordbook_id,)
@@ -333,29 +416,17 @@ def activate_wordbook_plan(
                 """,
                 (daily_new, new_order, timestamp, plan_id),
             )
-        entry_ids = [
-            int(row["entry_id"])
-            for row in connection.execute(
-                """
-                SELECT entry_id FROM wordbook_entries
-                WHERE wordbook_id = ? ORDER BY sequence
-                """,
-                (wordbook_id,),
-            ).fetchall()
-        ]
-        generated = 0
-        for entry_id in entry_ids:
-            generated += len(
-                generate_cards_for_entry(
-                    connection,
-                    entry_id,
-                    generation_source=(
-                        "builtin_wordbook"
-                        if wordbook_kind == "builtin"
-                        else "imported_wordbook"
-                    ),
-                )
-            )
+        generated = generate_wordbook_card_pool(
+            connection,
+            wordbook_id,
+            new_order=new_order,
+            max_entries=min(50, daily_new),
+            generation_source=(
+                "builtin_wordbook"
+                if wordbook_kind == "builtin"
+                else "imported_wordbook"
+            ),
+        )
         connection.commit()
     except Exception:
         connection.rollback()
@@ -455,11 +526,6 @@ def import_wordbook(
                 """,
                 (wordbook_id, entry_id, sequence, timestamp),
             )
-            cards = generate_cards_for_entry(
-                connection,
-                entry_id,
-                generation_source="imported_wordbook",
-            )
             if found:
                 matched += 1
             else:
@@ -469,8 +535,6 @@ def import_wordbook(
                         "status": "needs_enrichment",
                     }
                 )
-                if not meaning and cards:
-                    raise RuntimeError("数据不足的未匹配词不应生成空白卡片")
         connection.commit()
     except Exception:
         connection.rollback()

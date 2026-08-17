@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIST
@@ -21,6 +21,7 @@ from .routers import (
     question_bank_profiles,
     question_banks,
     resources,
+    study,
     vocabulary,
     wordbooks,
     wrong,
@@ -77,11 +78,36 @@ app.include_router(vocabulary.router, prefix="/api")
 app.include_router(resources.router, prefix="/api")
 app.include_router(dictionary.router, prefix="/api")
 app.include_router(wordbooks.router, prefix="/api")
+app.include_router(study.router, prefix="/api")
 
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.api_route(
+    "/api/{api_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    include_in_schema=False,
+)
+@app.api_route(
+    "/api",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    include_in_schema=False,
+)
+def api_not_found(api_path: str = "") -> JSONResponse:
+    """Keep unknown API calls out of the SPA HTML fallback (KI-7)."""
+
+    return JSONResponse(
+        status_code=404,
+        content={
+            "code": "api_not_found",
+            "message": f"接口不存在：/api{'/' + api_path if api_path else ''}",
+            "details": {"path": f"/api{'/' + api_path if api_path else ''}"},
+            "recoverable": False,
+        },
+    )
 
 
 if FRONTEND_DIST.exists():

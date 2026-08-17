@@ -23,17 +23,6 @@ schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备
 ### KI-5 ｜ P3 ｜ Python 3.14 弃用警告（asyncio.iscoroutinefunction，来自 FastAPI）
 影响：仅日志噪音。计划：等 FastAPI 升级；不自行处理。
 
-### KI-6 ｜ P2 ｜ 旧词汇复习接口未接 FSRS（契约 §6 未实现）
-`POST /api/vocabulary/{id}/review` 仍执行旧固定间隔调度（again/hard/mastered → +1/3/7 天），写 naive 本地时间到 `vocabulary_entries.next_review_at`；不更新 forward 卡的 review_items，不写 review_logs。
-复现：A6.4——对迁移后的词条调用旧接口评 hard → entry.next_review_at=+3天本地时间，卡片 due_at 不变，review_logs 0 行。
-影响：旧单词本 UI 评分与 FSRS 状态分叉；继续污染 naive 时间戳。绕行：改用新学习会话接口（前端切换后旧入口弃用）。
-主责：Codex（Issue #2 当前批次实现 API_CONTRACT §6 映射）。发现于 2026-08-17 A6 验收。
-
-### KI-7 ｜ P3 ｜ SPA 兜底路由吞掉未实现的 /api 路径（返回 index.html 200）
-未注册的 /api/* GET 会命中 main.py 的前端兜底路由，返回 HTML 200 而非 404，调用方无法按状态码识别接口缺失。
-前端已防御（api.ts 按 content-type 判定，PR #10）；后端待修：兜底路由排除 /api/ 前缀并返回契约格式 404。
-主责：Codex（main.py 租约）。发现于 2026-08-17 /study 页冒烟。
-
 ## 设计约束备忘（不是缺陷）
 
 - FTS5 trigram 对 <3 字符查询走 LIKE 回退（API_CONTRACT.md §3）；数据量到十万级片段后重新评测，必要时引入分词升级，只重建索引不动事实表。
@@ -46,4 +35,8 @@ schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备
 
 ## 已关闭
 
-（空）
+### KI-6 ｜ P2 ｜ 旧词汇复习接口未接 FSRS
+已于 2026-08-17 修复：`POST /api/vocabulary/{id}/review` 现定位或补建正向卡，按 again→1、hard→2、mastered→4 进入与新学习会话相同的 FSRS 评分核心；更新 UTC 带偏移的词条兼容字段并写入 `review_logs`，不再写旧固定间隔或 naive 时间。构造旧库与 `test-fixtures/existing-user-database.sqlite` A6.4 仿真库均有回归覆盖。
+
+### KI-7 ｜ P3 ｜ SPA 兜底路由吞掉未实现的 /api 路径
+已于 2026-08-17 修复：`main.py` 在 SPA 兜底之前注册 `/api` 与 `/api/{path}` 契约 404，返回 `{code,message,details,recoverable}` JSON；未知 study 路径与 `/api` 根路径均有回归覆盖。前端 content-type 防御继续保留用于兼容旧版本。
