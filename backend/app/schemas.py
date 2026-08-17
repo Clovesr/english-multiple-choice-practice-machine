@@ -189,6 +189,34 @@ class VocabularyReview(BaseModel):
     rating: Literal["again", "hard", "mastered"]
 
 
+class VocabularySelectionCreate(BaseModel):
+    term: str = Field(min_length=1, max_length=200)
+    context_sentence: str = Field(default="", max_length=1500)
+    context_before: str = Field(default="", max_length=1000)
+    context_after: str = Field(default="", max_length=1000)
+    resource_id: int = Field(ge=1)
+    segment_id: int = Field(ge=1)
+
+
+class VocabularyStateUpdate(BaseModel):
+    study_status: Literal["known", "learning", "ignored", "paused", "focus"]
+
+
+class WordbookTerm(BaseModel):
+    term: str = Field(min_length=1, max_length=200)
+    meaning: str = Field(default="", max_length=2000)
+
+
+class WordbookImportRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    terms: list[str | WordbookTerm] = Field(min_length=1, max_length=50000)
+
+
+class WordbookPlanRequest(BaseModel):
+    daily_new: int = Field(default=20, ge=1, le=500)
+    new_order: Literal["frequency", "sequence", "random"] = "frequency"
+
+
 class ResourceTextCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     content: str = Field(min_length=1)

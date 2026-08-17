@@ -14,6 +14,7 @@ from .database import connect, initialize_database
 from .routers import (
     ai,
     dashboard,
+    dictionary,
     imports,
     papers,
     practice,
@@ -21,12 +22,14 @@ from .routers import (
     question_banks,
     resources,
     vocabulary,
+    wordbooks,
     wrong,
 )
 from .services.ai_client import ensure_ai_model_catalog
 from .services.bundled_banks import install_bundled_question_banks
 from .services.listening import repair_published_listening_assets
 from .services.vocabulary import clean_machine_meanings, translate_queued_vocabulary
+from .services.wordbooks import install_bundled_wordbooks
 from .services.trash import purge_expired
 
 
@@ -37,6 +40,7 @@ async def lifespan(_: FastAPI):
     with connect() as connection:
         ensure_ai_model_catalog(connection)
         clean_machine_meanings(connection)
+        install_bundled_wordbooks(connection)
         purge_expired(connection)
         repair_published_listening_assets(connection)
     threading.Thread(
@@ -71,6 +75,8 @@ app.include_router(question_bank_profiles.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(vocabulary.router, prefix="/api")
 app.include_router(resources.router, prefix="/api")
+app.include_router(dictionary.router, prefix="/api")
+app.include_router(wordbooks.router, prefix="/api")
 
 
 @app.get("/api/health")
