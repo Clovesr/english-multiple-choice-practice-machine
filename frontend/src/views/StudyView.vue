@@ -32,6 +32,8 @@ const settings = ref<StudySettings | null>(null)
 const queue = ref<QueueItem[]>([])
 const sessionDone = ref(0)
 const sessionPlanned = ref(0)
+const completedToday = ref<StudyCard[]>([])
+const consolidating = ref(false)
 const loading = ref(true)
 const backendReady = ref(true)
 const loadError = ref('')
@@ -142,6 +144,7 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
     } else {
       await gradeStudyCard(item.card.card_id, { attempt_id: newAttemptId(), ...payload })
       encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
+      completedToday.value = [...completedToday.value, item.card]
       let next = queue.value.slice(1)
       // 记错/模糊的词：几张卡后当日重练，直到过关
       if (payload.rating <= 2) next = insertDrill(next, item)
@@ -179,6 +182,15 @@ async function onSkip() {
   } catch {
     queue.value = [...queue.value.slice(1), item]
   }
+}
+
+/** 巩固今日所学：本会话学过的词以测验形态再过一遍（本地巩固，不写长期排期）。 */
+function startConsolidation() {
+  if (!completedToday.value.length) return
+  consolidating.value = true
+  const shuffled = [...completedToday.value].sort(() => Math.random() - 0.5)
+  queue.value = shuffled.map((card) => ({ card, drill: true, drillCount: 0 }))
+  lastFetchHadCards.value = false // 巩固结束后不自动拉新批次
 }
 
 onMounted(async () => {
@@ -239,7 +251,7 @@ onMounted(async () => {
     <template v-else-if="current">
       <div class="session-progress" aria-hidden="true">
         <div class="session-progress-bar"><div :style="`width:${sessionPlanned ? Math.min(100, Math.round(sessionDone / sessionPlanned * 100)) : 0}%`" /></div>
-        <small>{{ sessionDone }} / {{ sessionPlanned }}<template v-if="current.drill"> · 重练不计入</template></small>
+        <small v-if="consolidating">巩固模式 · 剩余 {{ queue.length }}</small><small v-else>{{ sessionDone }} / {{ sessionPlanned }}<template v-if="current.drill"> · 巩固不计入</template></small>
       </div>
       <StudyCardView :card="current.card" :drill="current.drill" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" />
     </template>
@@ -253,10 +265,14 @@ onMounted(async () => {
 
     <div v-else class="card empty">
       <PartyPopper :size="26" style="color:var(--primary)" />
-      <strong v-if="doneCount">今天的队列清完了，共 {{ doneCount }} 张</strong>
+      <strong v-if="consolidating">巩固完成，今天的 {{ completedToday.length }} 个词都过了第二遍</strong>
+      <strong v-else-if="doneCount">今天的队列清完了，共 {{ doneCount }} 张</strong>
       <strong v-else>当前没有到期的卡片</strong>
-      <p>想学更多，去词书页调整每日新词量，或在资源库阅读时收藏新词。</p>
-      <div style="display:flex;gap:10px;justify-content:center">
+      <p v-if="!consolidating && completedToday.length">趁热打铁：把今天学过的 {{ completedToday.length }} 个词用测验再过一遍，不影响记忆排期。</p>
+      <p v-else>想学更多，去词书页调整每日新词量，或在资源库阅读时收藏新词。</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button v-if="completedToday.length && !consolidating" class="button compact" type="button" @click="startConsolidation">巩固今日所学（{{ completedToday.length }} 词）</button>
+        <button v-else-if="consolidating && completedToday.length" class="button secondary compact" type="button" @click="startConsolidation">再巩固一轮</button>
         <RouterLink class="button secondary compact" to="/wordbooks">词书与计划</RouterLink>
         <RouterLink class="button ghost compact" to="/resources">去阅读</RouterLink>
       </div>

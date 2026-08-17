@@ -177,7 +177,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <header class="study-card-head">
       <span v-if="teaching" class="pill" style="background:var(--lavender)">新词学习</span>
       <span v-else class="pill">{{ typeLabels[card.card_type] }}</span>
-      <span v-if="drill" class="pill" style="background:var(--apricot)">重练</span>
+      <span v-if="drill" class="pill" style="background:var(--apricot)">巩固</span>
       <span style="flex:1" />
       <button
         v-if="hidesWord && !revealed"
