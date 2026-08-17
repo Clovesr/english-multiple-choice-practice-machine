@@ -184,6 +184,12 @@ async function onSkip() {
   }
 }
 
+/** 稍后再来：本地推迟到队尾，不调后端。 */
+function onDefer() {
+  if (!current.value || queue.value.length < 2) return
+  queue.value = [...queue.value.slice(1), queue.value[0]]
+}
+
 /** 巩固今日所学：本会话学过的词以测验形态再过一遍（本地巩固，不写长期排期）。 */
 function startConsolidation() {
   if (!completedToday.value.length) return
@@ -253,7 +259,7 @@ onMounted(async () => {
         <div class="session-progress-bar"><div :style="`width:${sessionPlanned ? Math.min(100, Math.round(sessionDone / sessionPlanned * 100)) : 0}%`" /></div>
         <small v-if="consolidating">巩固模式 · 剩余 {{ queue.length }}</small><small v-else>{{ sessionDone }} / {{ sessionPlanned }}<template v-if="current.drill"> · 巩固不计入</template></small>
       </div>
-      <StudyCardView :card="current.card" :drill="current.drill" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" />
+      <StudyCardView :card="current.card" :drill="current.drill" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" @defer="onDefer" />
     </template>
 
 <style scoped>

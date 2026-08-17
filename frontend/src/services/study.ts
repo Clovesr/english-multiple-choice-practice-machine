@@ -12,10 +12,13 @@ export interface StudyEntry {
   phonetic_uk: string
   phonetic_us: string
   senses: Array<{ pos: string, gloss_zh: string, gloss_en?: string }>
+  memory_hint?: string
+  note?: string
 }
 
 export interface StudyCard {
   card_id: number
+  entry_id?: number
   review_item_id: number
   card_type: CardType
   state: CardState

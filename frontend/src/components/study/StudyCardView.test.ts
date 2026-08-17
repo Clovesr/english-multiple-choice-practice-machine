@@ -96,7 +96,10 @@ describe('听音卡降级（十条之 9 / A10.4）', () => {
       props: { card: makeCard({ card_type: 'listening', prompt: { tts_text: 'resilience' }, answer: { accept: ['resilience'] } }), speechAvailable: false },
     })
     expect(wrapper.text()).toContain('没有可用的英语语音')
-    await wrapper.find('.study-foot button').trigger('click')
+    await wrapper.find('.study-foot button').trigger('click') // 第一个按钮=稍后再来
+    expect(wrapper.emitted('defer')).toHaveLength(1)
+    const skipBtn = wrapper.findAll('.study-foot button').find(b => b.text().includes('不再出'))
+    await skipBtn!.trigger('click')
     expect(wrapper.emitted('skip')).toHaveLength(1)
   })
 })

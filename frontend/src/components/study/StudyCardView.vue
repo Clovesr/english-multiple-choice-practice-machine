@@ -27,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'grade', payload: { rating: Rating, answer_given?: string, duration_ms: number }): void
   (e: 'skip'): void
+  (e: 'defer'): void
 }>()
 
 const revealed = ref(false)
@@ -304,6 +305,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </div>
 
+      <div v-if="card.entry.memory_hint" class="detail-row">
+        <label>助记</label>
+        <p class="memory-hint-text">{{ card.entry.memory_hint }}</p>
+      </div>
+
+      <div v-if="card.entry.note" class="detail-row">
+        <label>我的笔记</label>
+        <p class="memory-hint-text">{{ card.entry.note }}</p>
+      </div>
+
       <div v-if="card.contexts.length" class="detail-row">
         <label>你的语境</label>
         <blockquote v-for="(ctx, i) in card.contexts.slice(0, 2)" :key="i" class="context-quote">
@@ -323,7 +334,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </section>
 
     <footer class="study-foot">
-      <button class="button ghost compact" type="button" @click="emit('skip')">跳过本卡</button>
+      <button class="button ghost compact" type="button" @click="emit('defer')">稍后再来</button>
+      <button v-if="!teaching" class="button ghost compact" type="button" @click="emit('skip')">此词不再出「{{ typeLabels[card.card_type] }}」</button>
+      <RouterLink v-if="card.entry_id" class="button ghost compact" :to="`/vocabulary?word=${card.entry_id}`">打开词条档案</RouterLink>
     </footer>
   </article>
 </template>
@@ -380,6 +393,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .context-quote mark { background: transparent; color: var(--primary); font-weight: 700; }
 .context-quote cite { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; font-style: normal; }
 .rating-note { text-align: center; color: var(--muted); font-size: 12px; margin: 0; }
+.memory-hint-text { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink); background: var(--apricot); border-radius: 10px; padding: 9px 13px; }
 .study-foot { display: flex; justify-content: center; }
 .key-hint { margin-left: 8px; font-size: 11px; opacity: .7; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; }
 </style>
