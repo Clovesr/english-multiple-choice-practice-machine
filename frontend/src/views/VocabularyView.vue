@@ -85,9 +85,14 @@ async function load() {
     counts.value = result.counts || counts.value
     visibleCount.value = PAGE_SIZE
     const requested = Number(route.query.word)
-    const target = items.value.find(item => item.id === requested) || items.value[0]
-    if (target) await select(target.id)
-    else selected.value = null
+    if (requested) {
+      // 档案链接可能指向未收集词（教学中的新词），列表里没有也直接取详情
+      try { await select(requested) } catch { if (items.value[0]) await select(items.value[0].id) }
+    } else if (items.value[0]) {
+      await select(items.value[0].id)
+    } else {
+      selected.value = null
+    }
   } catch (e) { error.value = String(e) }
 }
 

@@ -46,20 +46,17 @@ const lastFetchHadCards = ref(true)
 
 const current = computed(() => queue.value[0] ?? null)
 
-// 同词去重（Anki bury siblings 的会话级过渡实现，词级调度重构由后端进行中）：
-// 本次学习会话中每个词只出现一次；已评分词的其余题型卡不再进入本次会话。
-const encounteredLemmas = new Set<string>()
-
+// 批内同词分组防御（服务端已词级出卡，正常时是恒等映射）。
+// 词级调度上线后不再做跨批次过滤：学习步（如评"忘记"后 1/10 分钟再到期）
+// 应该像 Anki 一样当日重现，且服务端同日首评规则保证不会重复推进排期。
 function dedupeByWord(cards: StudyCard[]): StudyCard[] {
   const byLemma = new Map<string, StudyCard[]>()
   for (const card of cards) {
     const key = card.entry.lemma.toLowerCase()
-    if (encounteredLemmas.has(key)) continue
     const bucket = byLemma.get(key)
     if (bucket) bucket.push(card)
     else byLemma.set(key, [card])
   }
-  // 同词多卡：到期复习优先；全新词取"本体先行"优先级（认词>回忆>听音>拼写>挖空>搭配）
   return [...byLemma.values()].map(pickCardForWord)
 }
 
@@ -84,8 +81,6 @@ async function load(refetch = false) {
     lastFetchHadCards.value = session.value.cards.length > 0
     queue.value = toQueue(session.value.cards)
     sessionPlanned.value = sessionDone.value + queue.value.length
-    // 整批都是本会话已见过的词 → 视为清空，避免无限补拉
-    if (!queue.value.length && session.value.cards.length) lastFetchHadCards.value = false
     void loadOverview()
   } catch (cause) {
     const error = cause as ApiError
@@ -143,7 +138,6 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
         : queue.value.slice(1)
     } else {
       await gradeStudyCard(item.card.card_id, { attempt_id: newAttemptId(), ...payload })
-      encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
       completedToday.value = [...completedToday.value, item.card]
       let next = queue.value.slice(1)
       // 记错/模糊的词：几张卡后当日重练，直到过关
@@ -159,7 +153,6 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
     const error = cause as ApiError
     if (error.status === 409) {
       // 卡片状态在批次创建后已变（如被暂停）：移出继续，不阻塞学习流
-      encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
       queue.value = queue.value.slice(1)
       if (!queue.value.length && lastFetchHadCards.value) await load(true)
     } else {
@@ -176,7 +169,6 @@ async function onSkip() {
   if (item.drill) { queue.value = queue.value.slice(1); return }
   try {
     await suspendStudyCard(item.card.card_id)
-    encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
     queue.value = queue.value.slice(1)
     if (!queue.value.length && lastFetchHadCards.value) await load(true)
   } catch {
@@ -259,7 +251,7 @@ onMounted(async () => {
         <div class="session-progress-bar"><div :style="`width:${sessionPlanned ? Math.min(100, Math.round(sessionDone / sessionPlanned * 100)) : 0}%`" /></div>
         <small v-if="consolidating">巩固模式 · 剩余 {{ queue.length }}</small><small v-else>{{ sessionDone }} / {{ sessionPlanned }}<template v-if="current.drill"> · 巩固不计入</template></small>
       </div>
-      <StudyCardView :card="current.card" :drill="current.drill" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" @defer="onDefer" />
+      <StudyCardView :card="current.card" :drill="current.drill" :can-defer="queue.length > 1" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" @defer="onDefer" />
     </template>
 
 <style scoped>
