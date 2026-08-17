@@ -17,12 +17,14 @@ import { speak } from '../../services/speech'
 import OptionList from './OptionList.vue'
 import RatingBar from './RatingBar.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   card: StudyCard
   speechAvailable: boolean
   /** 当日重练副本（错词内循环），评分只做本地清障 */
   drill?: boolean
-}>()
+  /** 队列还有其他卡时才显示"稍后再来"（Vue 布尔 prop 缺省会强转 false，必须显式默认 true） */
+  canDefer?: boolean
+}>(), { drill: false, canDefer: true })
 
 const emit = defineEmits<{
   (e: 'grade', payload: { rating: Rating, answer_given?: string, duration_ms: number }): void
@@ -334,7 +336,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </section>
 
     <footer class="study-foot">
-      <button class="button ghost compact" type="button" @click="emit('defer')">稍后再来</button>
+      <button v-if="canDefer" class="button ghost compact" type="button" @click="emit('defer')">稍后再来</button>
       <button v-if="!teaching" class="button ghost compact" type="button" @click="emit('skip')">此词不再出「{{ typeLabels[card.card_type] }}」</button>
       <RouterLink v-if="card.entry_id" class="button ghost compact" :to="`/vocabulary?word=${card.entry_id}`">打开词条档案</RouterLink>
     </footer>
