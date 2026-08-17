@@ -15,3 +15,8 @@ Copyright (C) 2026 往事随风k
 
 项目使用的第三方 Python 和 JavaScript 依赖继续适用各自许可证。
 
+项目随发布包提供的 CET4、CET6 与考研离线词典数据来自 ECDICT：
+https://github.com/skywind3000/ECDICT ，固定上游提交为
+`bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b`。该数据按 MIT License 使用，
+完整许可文本与可复现构建信息见 `backend/resources/`。
+

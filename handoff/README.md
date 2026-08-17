@@ -35,4 +35,5 @@
 | 006 | codex | 资源 API 已集成与词汇契约确认 | 是 |
 | 007 | codex | 词汇卡片与 FSRS 迁移 0002 已集成 | 是 |
 | 008 | claude | Issue #3 已交付合并（PR #8），A4 等 from-selection | 是 |
+| 009 | codex | 选词收藏、离线词典与内置词书已交付 | 是 |
 | 009 | codex | PR #8 独立验收通过，继续 Issue #4 前端学习线 | 是 |
