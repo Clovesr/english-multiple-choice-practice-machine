@@ -29,6 +29,11 @@ schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备
 影响：旧单词本 UI 评分与 FSRS 状态分叉；继续污染 naive 时间戳。绕行：改用新学习会话接口（前端切换后旧入口弃用）。
 主责：Codex（Issue #2 当前批次实现 API_CONTRACT §6 映射）。发现于 2026-08-17 A6 验收。
 
+### KI-7 ｜ P3 ｜ SPA 兜底路由吞掉未实现的 /api 路径（返回 index.html 200）
+未注册的 /api/* GET 会命中 main.py 的前端兜底路由，返回 HTML 200 而非 404，调用方无法按状态码识别接口缺失。
+前端已防御（api.ts 按 content-type 判定，PR #10）；后端待修：兜底路由排除 /api/ 前缀并返回契约格式 404。
+主责：Codex（main.py 租约）。发现于 2026-08-17 /study 页冒烟。
+
 ## 设计约束备忘（不是缺陷）
 
 - FTS5 trigram 对 <3 字符查询走 LIKE 回退（API_CONTRACT.md §3）；数据量到十万级片段后重新评测，必要时引入分词升级，只重建索引不动事实表。
