@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, ratingFromKey, suggestedRating } from './study'
+import { buildHint, highlightSegments, isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, ratingFromKey, suggestedRating } from './study'
 
 describe('normalizeAnswer', () => {
   it('小写、去空白、压缩空格、NFKC', () => {
@@ -75,5 +75,33 @@ describe('isRecallReverse', () => {
   it('有干扰项或非反向卡 → false', () => {
     expect(isRecallReverse({ card_type: 'reverse', answer: { distractors: ['a'] } })).toBe(false)
     expect(isRecallReverse({ card_type: 'spelling', answer: {} })).toBe(false)
+  })
+})
+
+describe('highlightSegments', () => {
+  it('高亮原形与词形变化（大小写不敏感、词边界）', () => {
+    const segs = highlightSegments('Her abilities exceed his Ability.', ['ability', 'abilities'])
+    expect(segs.filter(s => s.hit).map(s => s.text)).toEqual(['abilities', 'Ability'])
+    expect(segs.map(s => s.text).join('')).toBe('Her abilities exceed his Ability.')
+  })
+  it('不误伤子串（scale 不命中 scales 之外的 escalate）', () => {
+    const segs = highlightSegments('They escalate as the scale grows.', ['scale'])
+    expect(segs.filter(s => s.hit).map(s => s.text)).toEqual(['scale'])
+  })
+  it('空目标返回整句', () => {
+    expect(highlightSegments('Hello world.', [])).toEqual([{ text: 'Hello world.', hit: false }])
+  })
+})
+
+describe('buildHint', () => {
+  it('一级提示：首字母+长度', () => {
+    expect(buildHint(1, 'ability', "ә'biliti")).toBe('a······（7 个字母）')
+  })
+  it('二级提示追加音标；无音标时保持一级', () => {
+    expect(buildHint(2, 'ability', "ә'biliti")).toContain("/ә'biliti/")
+    expect(buildHint(2, 'cat', '')).toBe('c··（3 个字母）')
+  })
+  it('零级无提示', () => {
+    expect(buildHint(0, 'ability', 'x')).toBeNull()
   })
 })

@@ -141,3 +141,34 @@ export function isObjectiveCard(card: Pick<StudyCard, 'card_type' | 'answer'>): 
 export function ratingFromKey(key: string): Rating | null {
   return key === '1' || key === '2' || key === '3' || key === '4' ? (Number(key) as Rating) : null
 }
+
+/** 把句子按目标词（原形+变形）切成命中/未命中片段，供模板安全高亮（不用 v-html）。 */
+export function highlightSegments(
+  sentence: string,
+  targets: string[],
+): Array<{ text: string, hit: boolean }> {
+  const cleaned = targets.map((t) => t.trim()).filter(Boolean)
+  if (!sentence || !cleaned.length) return sentence ? [{ text: sentence, hit: false }] : []
+  const escaped = cleaned
+    .sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const pattern = new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi')
+  const segments: Array<{ text: string, hit: boolean }> = []
+  let cursor = 0
+  for (const match of sentence.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > cursor) segments.push({ text: sentence.slice(cursor, index), hit: false })
+    segments.push({ text: match[0], hit: true })
+    cursor = index + match[0].length
+  }
+  if (cursor < sentence.length) segments.push({ text: sentence.slice(cursor), hit: false })
+  return segments
+}
+
+/** 渐进提示（百词斩式梯度披露）：一级=首字母+长度，二级=音标。 */
+export function buildHint(level: number, lemma: string, phonetic: string): string | null {
+  if (level <= 0) return null
+  const shape = `${lemma.charAt(0)}${'·'.repeat(Math.max(lemma.length - 1, 0))}（${lemma.length} 个字母）`
+  if (level === 1) return shape
+  return phonetic ? `${shape} ｜ /${phonetic}/` : shape
+}
