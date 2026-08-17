@@ -274,9 +274,12 @@ CREATE TABLE review_logs (
 CREATE INDEX idx_review_logs_item ON review_logs(review_item_id, reviewed_at);
 ```
 
-`review_items.ref_id` 是多态关联，SQLite 无法直接声明到两张目标表的外键；迁移创建
-`vocabulary_cards_review_item_delete` 触发器，在卡片被物理删除时同步删除其复习项，
-`review_logs` 再通过外键级联删除，避免旧词条硬删除留下孤儿调度数据。
+`review_items.ref_id` 是多态关联，SQLite 无法直接声明到目标表的外键。0002 的
+`vocabulary_cards_review_item_delete` 只负责清理遗留的活跃
+`item_type='vocabulary_card'` 卡级项；0006 重建该触发器并新增
+`vocabulary_entries_review_item_delete`，词条被物理删除时才清理其活跃
+`item_type='vocabulary'` 词级项，`review_logs` 再通过外键级联删除。删除单张题型卡不得删除
+该词的词级调度状态；常规软删除也不会触发物理删除触发器。
 
 FSRS 引擎使用 **py-fsrs（MIT）**默认参数起步；0006 后每个有卡片的词条只有一个活跃
 `item_type='vocabulary'` 复习项。`review_logs.card_id` 继续记录当次实际题型，保全量前后状态，
@@ -456,6 +459,11 @@ CREATE TABLE vocabulary_card_type_settings (
    选择 collocation。首选题型关闭或暂停时，只在剩余可用题型内确定性降级。
 7. 同一词条按用户本地日历日只允许第一次评分推进 FSRS；同日后续评分仍追加 no-op
    `review_logs`（同一 attempt_id 继续幂等），但不改变 due、stability、difficulty 或 reps。
+8. 当天已有 `review_logs` 的词条从后续 session 的 new/due 队列排除；今日完成量按词条
+   每个本地日去重并只统计词汇项。对应 `learning_events.result_json` 以
+   `schedule_applied=false` 标记同日 no-op：日报不重复增加 reviews_done/new_words，但练习耗时
+   仍计入 study_ms。词汇 overview 的连续天数与保持率同样只聚合词汇卡日志，保持率按
+   “词条 × 本地日”的第一次评分计算，不混入错题或同日 no-op。
 
 ## 4. 存量词汇接入 FSRS（迁移 0002 数据部分；最终由 0006 收敛为词级）
 
