@@ -388,11 +388,21 @@ def _today_counts(connection: sqlite3.Connection, now: datetime) -> dict[str, in
     start, end, _ = _local_day_bounds(now)
     row = connection.execute(
         """
+        WITH daily_vocabulary_logs AS (
+            SELECT rl.state_before,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY vc.entry_id
+                       ORDER BY rl.reviewed_at, rl.id
+                   ) AS daily_ordinal
+            FROM review_logs AS rl
+            JOIN vocabulary_cards AS vc ON vc.id = rl.card_id
+            WHERE rl.reviewed_at >= ? AND rl.reviewed_at < ?
+        )
         SELECT COUNT(*) AS done,
                COALESCE(SUM(CASE WHEN state_before = 'new' THEN 1 ELSE 0 END), 0) AS new_done,
                COALESCE(SUM(CASE WHEN state_before <> 'new' THEN 1 ELSE 0 END), 0) AS review_done
-        FROM review_logs
-        WHERE reviewed_at >= ? AND reviewed_at < ?
+        FROM daily_vocabulary_logs
+        WHERE daily_ordinal = 1
         """,
         (_iso(start), _iso(end)),
     ).fetchone()
@@ -401,6 +411,17 @@ def _today_counts(connection: sqlite3.Connection, now: datetime) -> dict[str, in
         "new_done": int(row["new_done"]),
         "review_done": int(row["review_done"]),
     }
+
+
+def _not_reviewed_today_sql(*, item_alias: str = "ri") -> str:
+    return f"""
+        NOT EXISTS (
+            SELECT 1 FROM review_logs AS same_day_log
+            WHERE same_day_log.review_item_id = {item_alias}.id
+              AND same_day_log.reviewed_at >= ?
+              AND same_day_log.reviewed_at < ?
+        )
+    """
 
 
 def _effective_new_target(settings: sqlite3.Row, plan: sqlite3.Row | None) -> int:
@@ -442,6 +463,8 @@ def _queue_counts(
 ) -> dict[str, int]:
     enabled = _enabled_types(settings)
     eligibility, params = _eligibility_sql(enabled)
+    day_start, day_end, _ = _local_day_bounds(now)
+    not_reviewed_today = _not_reviewed_today_sql()
     due = int(
         connection.execute(
             f"""
@@ -449,8 +472,9 @@ def _queue_counts(
             FROM review_items AS ri
             JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at <= ?
+              AND {not_reviewed_today}
             """,
-            (*params, _iso(now)),
+            (*params, _iso(now), _iso(day_start), _iso(day_end)),
         ).fetchone()[0]
     )
     plan_wordbook_id = int(plan["wordbook_id"]) if plan is not None else 0
@@ -461,6 +485,7 @@ def _queue_counts(
             FROM review_items AS ri
             JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state = 'new'
+              AND {not_reviewed_today}
               AND (
                 e.encounter_count > 0
                 OR (? > 0 AND EXISTS (
@@ -469,7 +494,13 @@ def _queue_counts(
                 ))
               )
             """,
-            (*params, plan_wordbook_id, plan_wordbook_id),
+            (
+                *params,
+                _iso(day_start),
+                _iso(day_end),
+                plan_wordbook_id,
+                plan_wordbook_id,
+            ),
         ).fetchone()[0]
     )
     today = _today_counts(connection, now)
@@ -663,6 +694,8 @@ def create_or_resume_session(
         counts = _queue_counts(connection, settings=settings, plan=plan, now=now)
     enabled = _enabled_types(settings)
     eligibility, eligibility_params = _eligibility_sql(enabled)
+    day_start, day_end, _ = _local_day_bounds(now)
+    not_reviewed_today = _not_reviewed_today_sql()
     review_limit = min(
         limit,
         max(
@@ -686,10 +719,17 @@ def create_or_resume_session(
         FROM review_items AS ri
         JOIN vocabulary_entries AS e ON e.id = ri.ref_id
         WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at <= ?
+          AND {not_reviewed_today}
         ORDER BY ri.due_at, ri.id
         LIMIT ?
         """,
-        (*eligibility_params, _iso(due_cutoff), review_limit),
+        (
+            *eligibility_params,
+            _iso(due_cutoff),
+            _iso(day_start),
+            _iso(day_end),
+            review_limit,
+        ),
     ).fetchall()
     selected: list[tuple[int, str]] = [
         (card_id, "due")
@@ -707,12 +747,19 @@ def create_or_resume_session(
             LEFT JOIN wordbook_entries AS we
               ON we.wordbook_id = ? AND we.entry_id = e.id
             WHERE {eligibility} AND ri.state = 'new'
+              AND {not_reviewed_today}
               AND (e.encounter_count > 0 OR we.entry_id IS NOT NULL)
             ORDER BY CASE WHEN e.encounter_count > 0 THEN 0 ELSE 1 END,
                      {_new_order_sql(order)}
             LIMIT ?
             """,
-            (wordbook_id, *eligibility_params, new_limit),
+            (
+                wordbook_id,
+                *eligibility_params,
+                _iso(day_start),
+                _iso(day_end),
+                new_limit,
+            ),
         ).fetchall()
         selected.extend(
             (card_id, "new")
@@ -938,9 +985,11 @@ def grade_card(
             """
             UPDATE study_session_cards
             SET status = 'graded', graded_at = ?
-            WHERE card_id = ? AND status = 'pending'
+            WHERE status = 'pending' AND card_id IN (
+                SELECT id FROM vocabulary_cards WHERE entry_id = ?
+            )
             """,
-            (_iso(now), card_id),
+            (_iso(now), row["entry_id"]),
         )
         connection.execute(
             """
@@ -1080,35 +1129,68 @@ def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
     settings = _ensure_settings(connection)
     plan = _active_plan(connection)
     queue = _queue_counts(connection, settings=settings, plan=plan, now=now)
-    start, _, local_today = _local_day_bounds(now)
+    day_start, day_end, local_today = _local_day_bounds(now)
     enabled = _enabled_types(settings)
     eligibility, params = _eligibility_sql(enabled)
+    not_reviewed_today = _not_reviewed_today_sql()
     overdue_total = int(
         connection.execute(
             f"""
             SELECT COUNT(*) FROM review_items AS ri
             JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at < ?
+              AND {not_reviewed_today}
             """,
-            (*params, _iso(start)),
+            (
+                *params,
+                _iso(day_start),
+                _iso(day_start),
+                _iso(day_end),
+            ),
         ).fetchone()[0]
     )
 
     def retention(days: int) -> float | None:
-        since = _iso(now - timedelta(days=days))
-        row = connection.execute(
+        since = now - timedelta(days=days)
+        rows = connection.execute(
             """
-            SELECT COUNT(*) AS total,
-                   COALESCE(SUM(CASE WHEN final_rating > 1 THEN 1 ELSE 0 END), 0) AS kept
-            FROM review_logs WHERE reviewed_at >= ?
+            SELECT rl.final_rating, rl.reviewed_at, vc.entry_id
+            FROM review_logs AS rl
+            JOIN vocabulary_cards AS vc ON vc.id = rl.card_id
+            WHERE rl.reviewed_at >= ?
+            ORDER BY rl.reviewed_at, rl.id
             """,
-            (since,),
-        ).fetchone()
-        return round(int(row["kept"]) / int(row["total"]), 4) if row["total"] else None
+            (_iso(since - timedelta(days=1)),),
+        ).fetchall()
+        seen_word_days: set[tuple[int, date]] = set()
+        total = 0
+        kept = 0
+        for row in rows:
+            try:
+                reviewed_at = datetime.fromisoformat(str(row["reviewed_at"]))
+                if reviewed_at.tzinfo is None:
+                    continue
+                local_review_date = reviewed_at.astimezone().date()
+            except ValueError:
+                continue
+            key = (int(row["entry_id"]), local_review_date)
+            if key in seen_word_days:
+                continue
+            seen_word_days.add(key)
+            if reviewed_at < since:
+                continue
+            total += 1
+            kept += int(int(row["final_rating"]) > 1)
+        return round(kept / total, 4) if total else None
 
     reviewed_dates: set[date] = set()
     for row in connection.execute(
-        "SELECT reviewed_at FROM review_logs ORDER BY reviewed_at DESC"
+        """
+        SELECT rl.reviewed_at
+        FROM review_logs AS rl
+        JOIN vocabulary_cards AS vc ON vc.id = rl.card_id
+        ORDER BY rl.reviewed_at DESC
+        """
     ).fetchall():
         try:
             reviewed_dates.add(datetime.fromisoformat(str(row["reviewed_at"])).astimezone().date())
@@ -1123,16 +1205,26 @@ def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
     due_dates: list[date] = []
     for row in connection.execute(
         f"""
-        SELECT ri.due_at FROM review_items AS ri
+        SELECT ri.due_at,
+               EXISTS (
+                   SELECT 1 FROM review_logs AS same_day_log
+                   WHERE same_day_log.review_item_id = ri.id
+                     AND same_day_log.reviewed_at >= ?
+                     AND same_day_log.reviewed_at < ?
+               ) AS reviewed_today
+        FROM review_items AS ri
         JOIN vocabulary_entries AS e ON e.id = ri.ref_id
         WHERE {eligibility} AND ri.state <> 'new'
         """,
-        params,
+        (_iso(day_start), _iso(day_end), *params),
     ).fetchall():
         try:
-            due_dates.append(datetime.fromisoformat(str(row["due_at"])).astimezone().date())
+            due_date = datetime.fromisoformat(str(row["due_at"])).astimezone().date()
         except ValueError:
             continue
+        if bool(row["reviewed_today"]) and due_date == local_today:
+            continue
+        due_dates.append(due_date)
     forecast = [
         {
             "date": (local_today + timedelta(days=offset)).isoformat(),

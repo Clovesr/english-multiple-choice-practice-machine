@@ -414,8 +414,89 @@ class StudyApiTests(unittest.TestCase):
         overview = self.client.get("/api/study/overview")
         self.assertEqual(overview.status_code, 200, overview.text)
         self.assertEqual(overview.json()["today"]["new_done"], 1)
-        self.assertEqual(overview.json()["today"]["reviews_done"], 1)
+        self.assertEqual(overview.json()["today"]["reviews_done"], 0)
+        self.assertEqual(overview.json()["retention_7d"], 0.0)
         self.assertEqual(len(overview.json()["forecast_7d"]), 7)
+
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE review_items SET due_at = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (
+                    (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+                    entry_id,
+                ),
+            )
+            connection.commit()
+        next_session = self.client.get(
+            "/api/study/session", params={"limit": 10}
+        ).json()
+        self.assertEqual(next_session["cards"], [])
+        self.assertEqual(next_session["counts"]["due_remaining"], 0)
+        self.assertEqual(next_session["counts"]["done_today"], 1)
+        overview_after = self.client.get("/api/study/overview").json()
+        self.assertEqual(overview_after["today"]["due_left"], 0)
+        self.assertEqual(overview_after["overdue_total"], 0)
+
+        report = self.client.get(
+            "/api/reports/daily",
+            params={"date": datetime.now().astimezone().date().isoformat()},
+        )
+        self.assertEqual(report.status_code, 200, report.text)
+        self.assertEqual(report.json()["reviews_done"], 1)
+        self.assertEqual(report.json()["new_words"], 1)
+
+    def test_direct_variant_grade_closes_pending_word_for_the_local_day(self) -> None:
+        collected = self._collect()
+        entry_id = int(collected["entry"]["id"])
+        pending = self.client.get(
+            "/api/study/session", params={"limit": 10}
+        ).json()
+        self.assertEqual(len(pending["cards"]), 1)
+        self.assertEqual(pending["cards"][0]["card_type"], "forward")
+
+        with connect() as connection:
+            spelling_id = int(
+                connection.execute(
+                    """
+                    SELECT id FROM vocabulary_cards
+                    WHERE entry_id = ? AND card_type = 'spelling'
+                    """,
+                    (entry_id,),
+                ).fetchone()[0]
+            )
+        grade = self.client.post(
+            f"/api/study/cards/{spelling_id}/grade",
+            json={
+                "attempt_id": str(uuid4()),
+                "rating": 1,
+                "answer_given": "ability",
+                "duration_ms": 500,
+            },
+        )
+        self.assertEqual(grade.status_code, 200, grade.text)
+
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE review_items SET due_at = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (
+                    (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+                    entry_id,
+                ),
+            )
+            connection.commit()
+
+        refreshed = self.client.get(
+            "/api/study/session", params={"limit": 10}
+        ).json()
+        self.assertEqual(refreshed["cards"], [])
+        self.assertEqual(refreshed["counts"]["due_remaining"], 0)
+        self.assertEqual(refreshed["counts"]["done_today"], 1)
 
     def test_unknown_api_path_is_json_404_not_spa_html(self) -> None:
         response = self.client.get("/api/study/not-a-real-endpoint")
@@ -593,6 +674,18 @@ class StudyApiTests(unittest.TestCase):
                 (entry_id,),
             ).fetchall()
             by_type = {str(row["card_type"]): int(row["id"]) for row in cards}
+            # The remaining assertions exercise stage rotation and independent
+            # type/entry suspension as a fresh-day scenario.
+            connection.execute(
+                """
+                DELETE FROM review_logs
+                WHERE review_item_id = (
+                    SELECT id FROM review_items
+                    WHERE item_type = 'vocabulary' AND ref_id = ?
+                )
+                """,
+                (entry_id,),
+            )
             connection.execute(
                 """
                 UPDATE review_items

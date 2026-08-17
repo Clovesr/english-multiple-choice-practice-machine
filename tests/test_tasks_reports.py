@@ -184,6 +184,20 @@ class TasksAndReportsApiTests(unittest.TestCase):
                 duration_ms=5_000,
                 occurred_at=timestamp,
             )
+            record_learning_event(
+                connection,
+                verb="review",
+                object_type="vocabulary_card",
+                object_id=2,
+                result={
+                    "correct": False,
+                    "new_word": True,
+                    "rating": 1,
+                    "schedule_applied": False,
+                },
+                duration_ms=2_000,
+                occurred_at=timestamp,
+            )
             connection.commit()
 
         date_value = datetime.now().astimezone().date().isoformat()
@@ -194,7 +208,7 @@ class TasksAndReportsApiTests(unittest.TestCase):
         self.assertEqual(
             response.json(),
             {
-                "study_ms": 35_000,
+                "study_ms": 37_000,
                 "reviews_done": 1,
                 "review_accuracy": 1.0,
                 "new_words": 1,

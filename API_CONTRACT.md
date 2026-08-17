@@ -84,7 +84,7 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 
 ## 7. 词汇学习（V1 冻结线，handoff 003 §4 提案 + 004 §5 修订对齐后的定稿）
 
-数据模型见 DATA_MODEL.md 0002 修订（Codex 维护）。核心原则：`vocabulary_cards` 是学习单元，每卡独立 FSRS；后端是判分最终权威；服务端展开容错规则，前端只做即时反馈。
+数据模型见 DATA_MODEL.md 0002 + 0006 修订（Codex 维护）。核心原则：**词条是调度单元**，每词只有一个活跃 FSRS `review_item`；`vocabulary_cards` 是按阶段轮换的出题/呈现类型，六类卡共享该词的长期记忆状态。后端是判分最终权威；服务端展开容错规则，前端只做即时反馈。
 
 ### 7.1 词书与词典
 
@@ -94,30 +94,30 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 - `GET /api/wordbooks/{id}/entries?offset=&limit=&state=`
 - `GET /api/dictionary/lookup?term=` → `{ "found", "entry": { "lemma", "phonetic_uk", "phonetic_us", "pos_senses": [{ "pos", "gloss_zh", "gloss_en" }], "forms": [{ "kind", "text" }], "relations": [...], "tags": [...], "frequency_rank" } }`。阅读器选词浮层同源调用；离线可用。
 - `PUT /api/vocabulary/entries/{id}/state` `{ "study_status": "known|learning|ignored|paused|focus" }`。词条级状态控制其全部卡片是否入队；恢复词条不得清除用户单独暂停的卡片。
-- `GET /api/vocabulary?status=&search=&scope=collected|all&limit=&offset=`：默认 `scope=collected`、`limit=120`、`offset=0`，只返回“有用户痕迹”的生词本词条；`scope=all` 用于包含尚未学习的词书种子词。`collected` 判定为 `encounter_count>0 OR source_kind='user' OR user_edited=1 OR manually_frequent=1 OR EXISTS(该词条任一卡片 reps>0)`。响应遵循 §1 分页外壳 `{ items, total, limit, offset }`；`counts` 不受分页影响，保留全库 `total`，并增加 `collected_total`、`seeded_total`、`visible_total`。`status=review` 以 vocabulary_card 对应 review_item 的 FSRS `due_at` 为准，不再读取旧 `next_review_at`。`GET /api/vocabulary/home` 同样排除未学习种子词。（用户裁决见 handoff 017/018；分页升级见 handoff 019 Claude。）
+- `GET /api/vocabulary?status=&search=&scope=collected|all&limit=&offset=`：默认 `scope=collected`、`limit=120`、`offset=0`，只返回“有用户痕迹”的生词本词条；`scope=all` 用于包含尚未学习的词书种子词。`collected` 判定为 `encounter_count>0 OR source_kind='user' OR user_edited=1 OR manually_frequent=1 OR EXISTS(该词条的词级 review_item 已有 reps)`。响应遵循 §1 分页外壳 `{ items, total, limit, offset }`；`counts` 不受分页影响，保留全库 `total`，并增加 `collected_total`、`seeded_total`、`visible_total`。`status=review` 以词条唯一 `review_items(item_type='vocabulary')` 的 FSRS `due_at` 为准，不再读取旧 `next_review_at`。`GET /api/vocabulary/home` 同样排除未学习种子词。（用户裁决见 handoff 017/018；分页升级见 handoff 019 Claude。）
 
 ### 7.2 学习会话
 
-- `GET /api/study/session?limit=` → `{ "session_id": "uuid", "counts": { "new_remaining", "due_remaining", "done_today" }, "cards": [ StudyCard ] }`。同一 `session_id` 内刷新/重试保持同一批卡与每日上限口径。到期优先，新卡按 `daily_new` 混入。
+- `GET /api/study/session?limit=` → `{ "session_id": "uuid", "counts": { "new_remaining", "due_remaining", "done_today" }, "cards": [ StudyCard ] }`。同一 `session_id` 内刷新/重试保持同一批卡与每日上限口径。到期优先，新卡按 `daily_new` 混入；同一词每个 session 最多一张题型卡。按用户本地日历日已评分的词不再进入新 session，也不计入 `new_remaining/due_remaining`；`done_today` 按当天完成长期调度的唯一词数计数，不按同日练习次数累加。
 - `StudyCard` 统一载荷：
 ```json
 {
-  "card_id": 1, "review_item_id": 2, "card_type": "forward|reverse|listening|spelling|cloze|collocation",
+  "card_id": 1, "entry_id": 3, "review_item_id": 2, "card_type": "forward|reverse|listening|spelling|cloze|collocation",
   "state": "new|learning|review|relearning",
-  "entry": { "lemma": "...", "phonetic_uk": "...", "phonetic_us": "...", "senses": [...] },
+  "entry": { "lemma": "...", "phonetic_uk": "...", "phonetic_us": "...", "senses": [...], "memory_hint": "...", "note": "..." },
   "prompt": { "text": "...", "tts_text": "...", "cloze_sentence": "...", "pairs": [...] },
   "answer": { "text": "...", "accept": ["..."], "distractors": [...] },
   "contexts": [{ "sentence": "...", "source": "..." }]
 }
 ```
   `answer.accept` 由**后端按统一容错规则展开**（大小写、Unicode 规范化、首尾/重复空格、美英拼写变体）；前端仅做规范化比对给即时反馈。
-- `POST /api/study/cards/{card_id}/grade` `{ "attempt_id": "uuid", "rating": 1|2|3|4, "answer_given"?: "...", "duration_ms" }` → `{ "card_id", "review_item": {...}, "review_log_id", "next_due_at", "auto_correct": true|false|null, "final_rating", "attempt_id" }`。服务端对 `answer_given` 复判并记录 `auto_correct`；客观卡默认 错→1 / 对→3，用户可改评（自动判定与最终评分同时入日志）。同 `attempt_id` 重试返回首次结果。
-- `POST /api/study/cards/{card_id}/suspend|unsuspend`（人工暂停位独立于词条状态）。
+- `POST /api/study/cards/{card_id}/grade` `{ "attempt_id": "uuid", "rating": 1|2|3|4, "answer_given"?: "...", "duration_ms" }` → `{ "card_id", "review_item": {...}, "review_log_id", "next_due_at", "auto_correct": true|false|null, "final_rating", "attempt_id" }`。服务端先由 `card_id` 定位词条，再更新其唯一词级 FSRS 项；对 `answer_given` 复判并记录 `auto_correct`。客观卡默认 错→1 / 对→3，用户可改评（自动判定与最终评分同时入日志）。同 `attempt_id` 重试返回首次结果。同一词按用户本地日历日仅第一次评分推进 FSRS；后续评分保留 no-op 审计日志，但不改变长期排期，也不重复增加今日完成量或日报复习/新词数。
+- `POST /api/study/cards/{card_id}/suspend|unsuspend`：暂停/恢复该词条的对应 `card_type`，不影响同词其他题型；该题型暂停位独立于词条状态与全局题型开关。
 
 ### 7.3 设置、统计、积压与冲刺
 
 - `GET/PUT /api/study/settings` → `{ "daily_new", "daily_review_max", "enabled_card_types": [...], "new_card_order", "leech_threshold", "backlog_mode" }`（V1 仅全局设置）。
-- `GET /api/study/overview` → `{ "today": { "new_done", "new_target", "reviews_done", "due_left" }, "overdue_total", "streak_days", "retention_7d", "retention_30d", "forecast_7d": [{ "date", "due" }], "leeches": n }`。首页与词汇页共用。
+- `GET /api/study/overview` → `{ "today": { "new_done", "new_target", "reviews_done", "due_left" }, "overdue_total", "streak_days", "retention_7d", "retention_30d", "forecast_7d": [{ "date", "due" }], "leeches": n }`。首页与词汇页共用；词汇完成量、连续天数与保持率只使用词级学习记录，同词同日本地日只取第一次长期调度评分，不混入错题复习或同日 no-op。
 - `POST /api/study/backlog/plan` `{ "mode": "spread|suspend_new|focus_overdue", "days"?: n }` → 处理方案预览 + 应用。
 - `POST /api/study/sprint` `{ "exam_date", "wordbook_id" }` → 预览（每日需新学/复习量、可行性提示）+ 激活；`GET /api/study/sprint`；`DELETE /api/study/sprint` 退出冲刺回常规计划。冲刺是 study_plans 的 mode=sprint 变体。
 

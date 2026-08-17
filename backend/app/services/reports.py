@@ -46,6 +46,10 @@ def compute_daily_report(
     for row in rows:
         result = _result(row["result_json"])
         if row["verb"] == "review":
+            # Same-day drills remain useful learning time, but only the first
+            # rating for a word advances its schedule and daily progress.
+            if result.get("schedule_applied") is False:
+                continue
             if isinstance(result.get("correct"), bool):
                 review_results.append(bool(result["correct"]))
             if result.get("new_word") is True:

@@ -170,6 +170,12 @@ class ReviewCenterApiTests(unittest.TestCase):
         stats = self.client.get("/api/review/stats")
         self.assertEqual(stats.status_code, 200, stats.text)
         self.assertEqual(stats.json()["retention_30d"], 1.0)
+        vocabulary_overview = self.client.get("/api/study/overview")
+        self.assertEqual(vocabulary_overview.status_code, 200, vocabulary_overview.text)
+        self.assertEqual(vocabulary_overview.json()["today"]["new_done"], 0)
+        self.assertEqual(vocabulary_overview.json()["today"]["reviews_done"], 0)
+        self.assertIsNone(vocabulary_overview.json()["retention_7d"])
+        self.assertEqual(vocabulary_overview.json()["streak_days"], 0)
 
     def test_review_item_suspend_and_type_validation(self) -> None:
         self._submit_wrong(timestamp="2026-08-17T00:00:00+00:00")
