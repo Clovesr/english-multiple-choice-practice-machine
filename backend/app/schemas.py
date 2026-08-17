@@ -236,6 +236,12 @@ class StudyCardGrade(BaseModel):
     duration_ms: int = Field(default=0, ge=0, le=3_600_000)
 
 
+class ReviewItemGrade(BaseModel):
+    attempt_id: UUID
+    rating: Literal[1, 2, 3, 4]
+    duration_ms: int = Field(default=0, ge=0, le=3_600_000)
+
+
 class StudySettingsUpdate(BaseModel):
     daily_new: int | None = Field(default=None, ge=0, le=500)
     daily_review_max: int | None = Field(default=None, ge=0, le=5000)

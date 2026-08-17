@@ -20,6 +20,7 @@ from .routers import (
     practice,
     question_bank_profiles,
     question_banks,
+    review,
     resources,
     study,
     vocabulary,
@@ -79,6 +80,7 @@ app.include_router(resources.router, prefix="/api")
 app.include_router(dictionary.router, prefix="/api")
 app.include_router(wordbooks.router, prefix="/api")
 app.include_router(study.router, prefix="/api")
+app.include_router(review.router, prefix="/api")
 
 
 @app.get("/api/health")
