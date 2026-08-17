@@ -5,21 +5,6 @@
 
 ## 未修问题
 
-### KI-1 ｜ P2 ｜ 词汇复习时间字段时区不一致（存量缺陷）
-`vocabulary_entries.next_review_at / last_reviewed_at` 由 `datetime.now()` 写入（本地 naive），而 created_at 等为 UTC。
-影响：到期判断在时区边界可能偏差数小时；绕行：无需操作。
-计划：迁移 0002 将存量值按本地时区换算为 UTC 接入 FSRS（DATA_MODEL.md §4）；新代码禁止 naive 时间。迁移后本条关闭。
-
-### KI-2 ｜ P2 ｜ 无版本化迁移（存量）
-schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备份。
-计划：迁移 0001 引入 schema_migrations + 迁移前自动快照；旧补丁逻辑冻结保留。W1 完成。
-
-### KI-3 ｜ P3 ｜ requirements.txt 原 pin lxml==6.0.0 在 Python 3.14 无 Windows wheel
-已在 develop-v1 更新为 lxml==6.1.1（85 测试通过）。若 Codex 环境为 Python ≤3.13，6.1.1 同样兼容。
-
-### KI-4 ｜ P3 ｜ 前端无测试框架
-计划：W1 由 Claude 引入 vitest + @vue/test-utils，先覆盖 api.ts 封装与阅读器进度逻辑，不追求覆盖率指标。
-
 ### KI-5 ｜ P3 ｜ Python 3.14 弃用警告（asyncio.iscoroutinefunction，来自 FastAPI）
 影响：仅日志噪音。计划：等 FastAPI 升级；不自行处理。
 
@@ -44,6 +29,22 @@ Codex 已复核收编，并为护栏增加 `<0.25s` 的万级回归门槛；服�
 （空）
 
 ## 已关闭
+
+### KI-1 ｜ P2 ｜ 词汇复习时间字段时区不一致
+已由迁移 0002/0006 与词级 FSRS 核心关闭：存量本地 naive 时间按迁移机本地时区显式换算为
+UTC 带偏移时间，新评分统一写 UTC；迁移、旧接口和同日边界均有回归覆盖。关闭于 2026-08-18。
+
+### KI-2 ｜ P2 ｜ 无版本化迁移
+迁移 0001 已引入 `schema_migrations`、WAL、迁移前自动快照与失败回滚；当前迁移已推进到 0006，
+重复启动、失败保全和旧库仿真均有测试覆盖。关闭于 2026-08-18。
+
+### KI-3 ｜ P3 ｜ Python 3.14 无 lxml Windows wheel
+`requirements.txt` 已固定到带 Python 3.14 Windows wheel 的 lxml 6.1.1；当前环境 `pip check`、
+全量测试和资源解析均通过。关闭于 2026-08-18。
+
+### KI-4 ｜ P3 ｜ 前端无测试框架
+已引入 Vitest + Vue Test Utils，现有阅读器、语音、学习服务与学习卡组件共 53 项测试，
+并纳入每轮生产构建回归。关闭于 2026-08-18。
 
 ### KI-6 ｜ P2 ｜ 旧词汇复习接口未接 FSRS
 已于 2026-08-17 修复：`POST /api/vocabulary/{id}/review` 现定位或补建正向卡，按 again→1、hard→2、mastered→4 进入与新学习会话相同的 FSRS 评分核心；更新 UTC 带偏移的词条兼容字段并写入 `review_logs`，不再写旧固定间隔或 naive 时间。构造旧库与 `test-fixtures/existing-user-database.sqlite` A6.4 仿真库均有回归覆盖。
