@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { AlarmClock, BookMarked, BookOpen, Check, Info, Layers, Loader2, RefreshCw, Search, Settings, Star, Trash2 } from 'lucide-vue-next'
+import { AlarmClock, Check, Info, Layers, Loader2, RefreshCw, Search, Settings, Star, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { del, get, post, put } from '../api'
-import VocabTabs from '../components/study/VocabTabs.vue'
 
 const route = useRoute()
 const items = ref<any[]>([])
@@ -158,14 +157,10 @@ onMounted(() => { void load(); void loadOverview() })
 </script>
 
 <template>
-  <div class="page vocabulary-page">
-    <VocabTabs />
-    <div class="page-head">
-      <div><span class="eyebrow">MY WORDS</span><h1>生词本</h1><p class="lead">你在阅读与真题里亲手遇见的词：完整语境、笔记与记忆档案都在这里。</p></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="button ghost" @click="showDisplayDialog=true"><Settings :size="17" />显示设置</button>
-        <RouterLink class="button" to="/study"><BookOpen :size="17" />开始今日复习</RouterLink>
-      </div>
+  <div class="vocab-pane vocabulary-page">
+    <div class="vocab-pane-toolbar">
+      <p class="lead" style="margin:0">你在阅读与真题里亲手遇见的词：完整语境、笔记与记忆档案。</p>
+      <button class="button ghost compact" @click="showDisplayDialog=true"><Settings :size="16" />显示设置</button>
     </div>
     <div v-if="error" class="warning">{{ error }}</div>
     <div v-if="notice" class="card vocab-notice">{{ notice }}</div>

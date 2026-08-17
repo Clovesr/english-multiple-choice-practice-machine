@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Flame, Loader2, PartyPopper, Settings2 } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { Loader2, PartyPopper, Settings2 } from 'lucide-vue-next'
+import { computed, inject, onMounted, ref } from 'vue'
+import type { Ref } from 'vue'
 import type { ApiError } from '../api'
 import {
   type CardType,
@@ -9,7 +10,6 @@ import {
   type StudyOverview,
   type StudySession,
   type StudySettings,
-  getStudyOverview,
   getStudySession,
   getStudySettings,
   gradeStudyCard,
@@ -19,10 +19,11 @@ import {
 } from '../services/study'
 import { getCapability } from '../services/speech'
 import StudyCardView from '../components/study/StudyCardView.vue'
-import VocabTabs from '../components/study/VocabTabs.vue'
+
+// 模块外壳提供的常驻数据条（评分后刷新它）
+const moduleOverview = inject<{ overview: Ref<StudyOverview | null>, refresh: () => Promise<void> } | null>('vocabOverview', null)
 
 const session = ref<StudySession | null>(null)
-const overview = ref<StudyOverview | null>(null)
 const settings = ref<StudySettings | null>(null)
 const queue = ref<StudyCard[]>([])
 const loading = ref(true)
@@ -42,9 +43,7 @@ const cardTypeLabels: Record<CardType, string> = {
 }
 
 async function loadOverview() {
-  try {
-    overview.value = await getStudyOverview()
-  } catch { /* overview 失败不阻塞学习 */ }
+  await moduleOverview?.refresh()
 }
 
 async function load(refetch = false) {
@@ -129,10 +128,6 @@ async function onSkip() {
   }
 }
 
-function percent(done: number, target: number): number {
-  return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0
-}
-
 onMounted(async () => {
   speechAvailable.value = (await getCapability()).available
   await load()
@@ -140,30 +135,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page" style="max-width:860px">
-    <VocabTabs />
-    <div class="page-head">
-      <div>
-        <span class="eyebrow">STUDY SESSION</span>
-        <h1>记单词</h1>
-        <p class="lead" v-if="session">
-          待复习 {{ session.counts.due_remaining }} · 新卡 {{ session.counts.new_remaining }} · 今日已完成 {{ session.counts.done_today }}
-        </p>
-      </div>
+  <div class="vocab-pane" style="max-width:760px;margin:0 auto">
+    <div class="vocab-pane-toolbar">
+      <p class="lead" v-if="session" style="margin:0">
+        待复习 {{ session.counts.due_remaining }} · 新卡 {{ session.counts.new_remaining }} · 今日已完成 {{ session.counts.done_today }}
+      </p>
+      <span v-else style="flex:1" />
       <button class="button ghost compact" type="button" aria-label="学习设置" @click="toggleSettings"><Settings2 :size="16" />学习设置</button>
-    </div>
-
-    <div v-if="overview && backendReady" class="card overview-strip">
-      <div class="ov-item">
-        <small>今日新学</small>
-        <strong>{{ overview.today.new_done }}/{{ overview.today.new_target }}</strong>
-        <div class="ov-bar"><div :style="`width:${percent(overview.today.new_done, overview.today.new_target)}%`" /></div>
-      </div>
-      <div class="ov-item"><small>今日复习</small><strong>{{ overview.today.reviews_done }}</strong></div>
-      <div class="ov-item"><small>逾期积压</small><strong :style="overview.overdue_total > 0 ? 'color:var(--danger)' : ''">{{ overview.overdue_total }}</strong></div>
-      <div class="ov-item"><small>连续天数</small><strong><Flame :size="14" style="color:var(--primary);vertical-align:-2px" /> {{ overview.streak_days }}</strong></div>
-      <div class="ov-item"><small>30日保持率</small><strong>{{ overview.retention_30d === null ? '—' : Math.round(overview.retention_30d * 100) + '%' }}</strong></div>
-      <div class="ov-item" v-if="overview.leeches"><small>顽固卡</small><strong style="color:var(--danger)">{{ overview.leeches }}</strong></div>
     </div>
 
     <section v-if="showSettings && settings" class="card" style="margin-bottom:16px;display:grid;gap:14px">
@@ -222,11 +200,3 @@ onMounted(async () => {
   </div>
 </template>
 
-<style scoped>
-.overview-strip { display: flex; gap: 26px; flex-wrap: wrap; padding: 16px 22px; margin-bottom: 16px; }
-.ov-item { display: grid; gap: 3px; min-width: 74px; }
-.ov-item small { color: var(--muted); font-size: 11px; }
-.ov-item strong { font-size: 17px; }
-.ov-bar { height: 4px; width: 74px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.ov-bar div { height: 100%; background: var(--primary); }
-</style>

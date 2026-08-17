@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, BookOpen, Loader2 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import VocabTabs from '../components/study/VocabTabs.vue'
 import type { ApiError } from '../api'
 import { type Wordbook, activateWordbookPlan, deactivateWordbookPlan, listWordbooks } from '../services/study'
 
@@ -57,15 +56,8 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page" style="max-width:960px">
-    <VocabTabs />
-    <div class="page-head">
-      <div>
-        <span class="eyebrow">WORDBOOKS</span>
-        <h1>词书与计划</h1>
-        <p class="lead">选择内置词书（CET4 / CET6 / 考研）或导入自定义词表，设定每日新词量开始学习。</p>
-      </div>
-    </div>
+  <div class="vocab-pane">
+    <p class="lead" style="margin:0 0 14px">选择内置词书（CET4 / CET6 / 考研）或导入自定义词表，设定每日新词量开始学习。</p>
 
     <div v-if="loading" class="card empty"><Loader2 :size="20" class="spinning" /><p>正在加载词书…</p></div>
 
