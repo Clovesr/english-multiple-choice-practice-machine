@@ -234,13 +234,18 @@ class BackupApiTests(unittest.TestCase):
         database_module.DATABASE_PATH = empty_database
         initialize_database()
         self.client = TestClient(app)
-        imported = self.client.post(
-            "/api/backup/import",
-            files={"file": ("portable-backup.zip", package_bytes, "application/zip")},
-        )
-        self.assertEqual(imported.status_code, 201, imported.text)
+        portable = empty_root / "backups" / "catalog" / "portable-backup.zip"
+        portable.parent.mkdir(parents=True)
+        portable.write_bytes(package_bytes)
+        listed = self.client.get("/api/backup/list")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(len(listed.json()["items"]), 1)
+        discovered = listed.json()["items"][0]
+        self.assertEqual(discovered["status"], "verified")
+        verified = self.client.post(f"/api/backup/{discovered['id']}/verify")
+        self.assertEqual(verified.status_code, 200, verified.text)
         restored = self.client.post(
-            f"/api/backup/{imported.json()['id']}/restore",
+            f"/api/backup/{discovered['id']}/restore",
             json={"dry_run": False},
         )
         self.assertEqual(restored.status_code, 200, restored.text)
@@ -295,45 +300,25 @@ class BackupApiTests(unittest.TestCase):
         self.assertEqual(restored_file.read_text(encoding="utf-8"), "Original resource content.")
 
     def test_corrupt_fixture_is_rejected_without_touching_database(self) -> None:
-        imported = self.client.post(
-            "/api/backup/import",
-            files={
-                "file": (
-                    "corrupt-backup.zip",
-                    (FIXTURES / "corrupt-backup.zip").read_bytes(),
-                    "application/zip",
-                )
-            },
-        )
-        self.assertEqual(imported.status_code, 409, imported.text)
-        self.assertEqual(imported.json()["code"], "backup_corrupt")
         backup_root = self.database_path.parent / "backups" / "catalog"
         backup_root.mkdir(parents=True, exist_ok=True)
         corrupt = backup_root / "corrupt-backup.zip"
         shutil.copyfile(FIXTURES / "corrupt-backup.zip", corrupt)
-        checksum = hashlib.sha256(corrupt.read_bytes()).hexdigest()
         from backend.app.database import connect
 
         with connect() as connection:
-            backup_id = int(
-                connection.execute(
-                    """
-                    INSERT INTO backup_catalog(
-                        path, kind, checksum, size_bytes, app_version,
-                        schema_version, status, created_at
-                    ) VALUES (
-                        'backups/catalog/corrupt-backup.zip', 'manual', ?, ?,
-                        '0.1.0', 5, 'ok', '2026-08-17T00:00:00+00:00'
-                    )
-                    """,
-                    (checksum, corrupt.stat().st_size),
-                ).lastrowid
-            )
-            connection.commit()
             before = connection.execute("SELECT COUNT(*) FROM resources").fetchone()[0]
+        listed = self.client.get("/api/backup/list")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        discovered = next(
+            item
+            for item in listed.json()["items"]
+            if item["path"].endswith("corrupt-backup.zip")
+        )
+        self.assertEqual(discovered["status"], "corrupt")
 
         response = self.client.post(
-            f"/api/backup/{backup_id}/restore", json={"dry_run": False}
+            f"/api/backup/{discovered['id']}/restore", json={"dry_run": False}
         )
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(response.json()["code"], "backup_corrupt")
@@ -455,12 +440,12 @@ database.DATABASE_PATH = Path(sys.argv[1])
 from backend.app.services import backups
 
 signal = Path(sys.argv[2])
-def pause_before_database_copy(connection, snapshot_path):
+def pause_before_metadata_commit(connection, *, source_backup, pre_restore):
     signal.write_text("ready", encoding="utf-8")
     while True:
         time.sleep(1)
 
-backups._restore_database = pause_before_database_copy
+backups._commit_restore_metadata = pause_before_metadata_commit
 with database.connect() as connection:
     backups.restore_backup(connection, int(sys.argv[3]), dry_run=False)
 """

@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any
 from uuid import uuid4
 
 from .. import database as database_module
@@ -319,105 +319,65 @@ def create_backup(
 
 
 def list_backups(connection: sqlite3.Connection) -> dict[str, Any]:
+    _discover_backup_packages(connection)
     rows = connection.execute(
         "SELECT * FROM backup_catalog ORDER BY created_at DESC, id DESC"
     ).fetchall()
     return {"items": [_catalog_payload(row) for row in rows]}
 
 
-def import_backup(
-    connection: sqlite3.Connection,
-    source: BinaryIO,
-    *,
-    filename: str,
-) -> dict[str, Any]:
-    """Import a portable package so an empty installation can restore it."""
+def _discover_backup_packages(connection: sqlite3.Connection) -> None:
+    """Rebuild catalog rows for portable packages copied into an empty install."""
 
-    safe_name = Path(filename or "backup.zip").name
-    if Path(safe_name).suffix.lower() != ".zip":
-        raise BackupCorruptError("备份文件必须是 ZIP 包")
     root = _backup_root()
-    token = uuid4().hex
-    destination = root / f"imported-{token}.zip"
-    partial = root / f".imported-{token}.partial"
-    size_bytes = 0
-    try:
-        with partial.open("xb") as target:
-            while chunk := source.read(1024 * 1024):
-                size_bytes += len(chunk)
-                if size_bytes > 4 * 1024 * 1024 * 1024:
-                    raise BackupCorruptError("备份包超过 4 GB 安全上限")
-                target.write(chunk)
-            target.flush()
-            os.fsync(target.fileno())
-        if size_bytes == 0:
-            raise BackupCorruptError("备份文件为空")
-        os.replace(partial, destination)
-        checksum = _sha256_file(destination)
-        manifest = _inspect_package(destination, expected_checksum=checksum)
-        relative_path = destination.relative_to(_data_root()).as_posix()
-        existing = connection.execute(
-            "SELECT * FROM backup_catalog WHERE checksum = ? AND size_bytes = ?",
-            (checksum, size_bytes),
-        ).fetchone()
-        if existing is not None:
-            try:
-                existing_path: Path | None = _resolve_catalog_path(
-                    str(existing["path"])
-                )
-            except BackupCorruptError:
-                existing_path = None
-            if existing_path is not None and existing_path.is_file():
-                destination.unlink(missing_ok=True)
-                return _catalog_payload(existing)
-            connection.execute(
-                """
-                UPDATE backup_catalog
-                SET path = ?, status = 'verified', app_version = ?,
-                    schema_version = ?, created_at = ?
-                WHERE id = ?
-                """,
-                (
-                    relative_path,
-                    str(manifest["app_version"]),
-                    int(manifest["schema_version"]),
-                    str(manifest["created_at"]),
-                    int(existing["id"]),
-                ),
-            )
-            connection.commit()
-            return _catalog_payload(_catalog_row(connection, int(existing["id"])))
-        cursor = connection.execute(
+    known_paths = {
+        str(row["path"])
+        for row in connection.execute("SELECT path FROM backup_catalog").fetchall()
+    }
+    inserted = False
+    for package in sorted(root.glob("*.zip")):
+        if not package.is_file() or package.is_symlink():
+            continue
+        relative_path = package.relative_to(_data_root()).as_posix()
+        if relative_path in known_paths:
+            continue
+        size_bytes = package.stat().st_size
+        checksum = _sha256_file(package)
+        try:
+            manifest = _inspect_package(package, expected_checksum=checksum)
+        except BackupCorruptError:
+            app_version = APP_VERSION
+            schema_version = _schema_version(connection)
+            status = "corrupt"
+            created_at = datetime.fromtimestamp(
+                package.stat().st_mtime, timezone.utc
+            ).isoformat()
+        else:
+            app_version = str(manifest["app_version"])
+            schema_version = int(manifest["schema_version"])
+            status = "verified"
+            created_at = str(manifest["created_at"])
+        connection.execute(
             """
             INSERT INTO backup_catalog(
                 path, kind, checksum, size_bytes, app_version,
                 schema_version, status, created_at
-            ) VALUES (?, 'manual', ?, ?, ?, ?, 'verified', ?)
+            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?)
             """,
             (
                 relative_path,
                 checksum,
                 size_bytes,
-                str(manifest["app_version"]),
-                int(manifest["schema_version"]),
-                str(manifest["created_at"]),
+                app_version,
+                schema_version,
+                status,
+                created_at,
             ),
         )
-        backup_id = int(cursor.lastrowid)
-        record_learning_event(
-            connection,
-            verb="backup_import",
-            object_type="backup",
-            object_id=backup_id,
-            result={"filename": safe_name, "checksum": checksum},
-        )
+        known_paths.add(relative_path)
+        inserted = True
+    if inserted:
         connection.commit()
-        return _catalog_payload(_catalog_row(connection, backup_id))
-    except Exception:
-        connection.rollback()
-        partial.unlink(missing_ok=True)
-        destination.unlink(missing_ok=True)
-        raise
 
 
 def _safe_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:

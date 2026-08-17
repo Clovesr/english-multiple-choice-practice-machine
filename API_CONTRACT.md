@@ -126,7 +126,7 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 
 - `GET /api/tasks/today` → `{ "date": "2026-08-24", "items": [ DailyTask ] }`；`POST /api/tasks/generate` 幂等重发不重复；`PUT /api/tasks/{id}/complete|skip`。
 - `GET /api/reports/daily?date=` → `{ "study_ms", "reviews_done", "review_accuracy", "new_words", "questions_answered", "question_accuracy" }`（由 learning_events 计算）。
-- `POST /api/backup/create` `{ "kind": "manual" }` → BackupEntry；`POST /api/backup/import` multipart `file=.zip` 将可移植备份登记到空环境；`GET /api/backup/list`；`POST /api/backup/{id}/verify`；`POST /api/backup/{id}/restore` `{ "dry_run": true|false }`，dry_run 返回恢复预览（对象计数对比）。恢复前自动为当前库建快照；恢复事务被强制中断时，下一次启动依据持久化 journal 自动回滚，已共同提交的数据只重试旧目录清理。
+- `POST /api/backup/create` `{ "kind": "manual" }` → BackupEntry；`GET /api/backup/list`；`POST /api/backup/{id}/verify`；`POST /api/backup/{id}/restore` `{ "dry_run": true|false }`，dry_run 返回恢复预览（对象计数对比）。恢复前自动为当前库建快照。
 - `POST /api/questions/{id}/skills` `{ "skill_ids": [..] }`；`GET /api/skills?type=&stage=`；`POST /api/skills`。
 - 错题评分后自动建/更新 wrong_question review_item（无独立接口，practice 提交流程内部触发）。
 

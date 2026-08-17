@@ -253,5 +253,25 @@
       "vocabulary_entries": {"current": 0, "backup": 0, "delta": 0},
       "wrong_stats": {"current": 1, "backup": 1, "delta": 0}
     }
+  },
+  "backup_restore": {
+    "dry_run": false,
+    "restored": true,
+    "backup_id": 1,
+    "pre_restore_backup_id": 2,
+    "object_counts": {
+      "daily_tasks": {"current": 3, "backup": 3, "delta": 0},
+      "learning_events": {"current": 5, "backup": 4, "delta": -1},
+      "practice_answers": {"current": 1, "backup": 1, "delta": 0},
+      "practice_sessions": {"current": 1, "backup": 1, "delta": 0},
+      "resource_segments": {"current": 1, "backup": 1, "delta": 0},
+      "resources": {"current": 1, "backup": 1, "delta": 0},
+      "review_items": {"current": 1, "backup": 1, "delta": 0},
+      "review_logs": {"current": 1, "backup": 1, "delta": 0},
+      "vocabulary_cards": {"current": 0, "backup": 0, "delta": 0},
+      "vocabulary_entries": {"current": 0, "backup": 0, "delta": 0},
+      "wrong_stats": {"current": 1, "backup": 1, "delta": 0}
+    },
+    "cleanup_pending": false
   }
 }

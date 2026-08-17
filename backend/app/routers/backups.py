@@ -3,9 +3,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from starlette.datastructures import UploadFile
 
 from ..database import get_db
 from ..schemas import BackupCreate, BackupRestore
@@ -14,7 +13,6 @@ from ..services.backups import (
     BackupError,
     BackupNotFoundError,
     create_backup,
-    import_backup,
     list_backups,
     restore_backup,
     verify_backup,
@@ -50,23 +48,6 @@ def create(
 @router.get("/list")
 def catalog(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
     return list_backups(connection)
-
-
-@router.post("/import", status_code=201)
-async def import_package(
-    request: Request,
-    connection: sqlite3.Connection = Depends(get_db),
-) -> Any:
-    try:
-        form = await request.form()
-        upload = form.get("file")
-        if not isinstance(upload, UploadFile):
-            return _error(400, "missing_file", "请选择 ZIP 备份文件")
-        return import_backup(connection, upload.file, filename=upload.filename or "backup.zip")
-    except BackupCorruptError as error:
-        return _error(409, "backup_corrupt", str(error))
-    except BackupError as error:
-        return _error(400, "backup_import_failed", str(error))
 
 
 @router.post("/{backup_id}/verify")
