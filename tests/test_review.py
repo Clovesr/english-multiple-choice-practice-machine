@@ -107,6 +107,11 @@ class ReviewCenterApiTests(unittest.TestCase):
             [option["stable_key"] for option in card["payload"]["options"]],
             ["A", "B"],
         )
+        wrong_rows = self.client.get("/api/wrong")
+        self.assertEqual(wrong_rows.status_code, 200, wrong_rows.text)
+        self.assertEqual(len(wrong_rows.json()), 1)
+        self.assertEqual(wrong_rows.json()[0]["question_id"], self.question_id)
+        self.assertEqual(wrong_rows.json()[0]["wrong_count"], 1)
 
         self._submit_wrong(timestamp="2026-08-18T00:00:00+00:00")
         from backend.app.database import connect
@@ -128,6 +133,10 @@ class ReviewCenterApiTests(unittest.TestCase):
                 ).fetchone()[0],
                 2,
             )
+        repeated_wrong_rows = self.client.get("/api/wrong").json()
+        self.assertEqual(len(repeated_wrong_rows), 1)
+        self.assertEqual(repeated_wrong_rows[0]["question_id"], self.question_id)
+        self.assertEqual(repeated_wrong_rows[0]["wrong_count"], 2)
 
         attempt_id = str(uuid4())
         body = {"attempt_id": attempt_id, "rating": 3, "duration_ms": 4200}
