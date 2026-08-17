@@ -259,7 +259,18 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/study/session").json()["cards"], [])
 
     def test_session_refresh_grade_idempotency_objective_recheck_and_suspend(self) -> None:
-        self._collect()
+        collected = self._collect()
+        entry_id = int(collected["entry"]["id"])
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE vocabulary_entries
+                SET memory_hint = 'able + ity，能力', note = '个人笔记'
+                WHERE id = ?
+                """,
+                (entry_id,),
+            )
+            connection.commit()
         settings = self.client.put(
             "/api/study/settings",
             json={"daily_new": 10, "daily_review_max": 20},
@@ -270,6 +281,14 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200, first.text)
         session = first.json()
         self.assertEqual(len(session["cards"]), 5)
+        self.assertTrue(all(card["entry_id"] == entry_id for card in session["cards"]))
+        self.assertTrue(
+            all(
+                card["entry"]["memory_hint"] == "able + ity，能力"
+                and card["entry"]["note"] == "个人笔记"
+                for card in session["cards"]
+            )
+        )
         refreshed = self.client.get("/api/study/session", params={"limit": 3}).json()
         self.assertEqual(refreshed["session_id"], session["session_id"])
         self.assertEqual(
@@ -340,8 +359,6 @@ class StudyApiTests(unittest.TestCase):
         remaining = self.client.get("/api/study/session").json()["cards"]
         self.assertNotIn(listening["card_id"], [card["card_id"] for card in remaining])
         self.assertTrue(any(card["card_type"] == "reverse" for card in remaining))
-
-        from backend.app.database import connect
 
         connection = connect()
         try:
