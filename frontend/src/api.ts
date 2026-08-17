@@ -36,6 +36,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw error
   }
   if (response.status === 204) return undefined as T
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    // 未实现的 /api 路径会被 SPA 兜底路由用 index.html(200) 吞掉（KI-7）；
+    // 视为接口缺失，让调用方走"未就绪"降级分支。
+    const error = new Error('接口不存在或未上线') as ApiError
+    error.status = 404
+    error.code = 'endpoint_missing'
+    throw error
+  }
   return response.json()
 }
 

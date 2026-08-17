@@ -10,6 +10,8 @@ import VocabularyView from './views/VocabularyView.vue'
 import TrashView from './views/TrashView.vue'
 import ResourcesView from './views/ResourcesView.vue'
 import ReaderView from './views/ReaderView.vue'
+import StudyView from './views/StudyView.vue'
+import WordbooksView from './views/WordbooksView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -18,6 +20,8 @@ export default createRouter({
     { path: '/library', component: LibraryView },
     { path: '/resources', component: ResourcesView },
     { path: '/resources/:id/read', component: ReaderView },
+    { path: '/study', component: StudyView },
+    { path: '/wordbooks', component: WordbooksView },
     { path: '/practice/:id', component: PracticeView },
     { path: '/wrong', component: WrongView },
     { path: '/vocabulary', component: VocabularyView },
