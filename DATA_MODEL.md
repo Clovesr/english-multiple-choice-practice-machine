@@ -454,6 +454,8 @@ CREATE TABLE vocabulary_card_type_settings (
 6. 出卡轮换使用可参数化的阶段策略：new/首照面优先 forward；learning/relearning 在
    reverse/listening 间轮换；稳定 review 在 spelling/cloze 间轮换；有显式搭配事实时周期性
    选择 collocation。首选题型关闭或暂停时，只在剩余可用题型内确定性降级。
+7. 同一词条按用户本地日历日只允许第一次评分推进 FSRS；同日后续评分仍追加 no-op
+   `review_logs`（同一 attempt_id 继续幂等），但不改变 due、stability、difficulty 或 reps。
 
 ## 4. 存量词汇接入 FSRS（迁移 0002 数据部分；最终由 0006 收敛为词级）
 
