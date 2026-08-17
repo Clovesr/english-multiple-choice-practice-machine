@@ -43,11 +43,17 @@ def _state_case(alias: str = "e") -> str:
             WHEN {alias}.study_status = 'ignored' THEN 'ignored'
             WHEN {alias}.study_status = 'paused' THEN 'paused'
             WHEN EXISTS (
+                -- KI-8 P1 hotfix（Claude 紧急代改，见 handoff/015）：原 JOIN 写法使查询计划
+                -- 从 review_items 的 item_type 前缀全扫（1.9 万行 × 每个外层词条），单本词书
+                -- 计数 20.7s。改为由 vc.entry_id 索引驱动的嵌套 EXISTS，点查収敛到毫秒级。
                 SELECT 1
                 FROM vocabulary_cards AS vc
-                JOIN review_items AS ri
-                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
-                WHERE vc.entry_id = {alias}.id AND ri.reps > 0
+                WHERE vc.entry_id = {alias}.id
+                  AND EXISTS (
+                    SELECT 1 FROM review_items AS ri
+                    WHERE ri.item_type = 'vocabulary_card'
+                      AND ri.ref_id = vc.id AND ri.reps > 0
+                  )
             ) THEN 'learning'
             ELSE 'new'
         END
@@ -117,6 +123,39 @@ def install_bundled_wordbooks(connection: sqlite3.Connection) -> dict[str, Any]:
     source_version = str(metadata.get("source_commit") or "")
     installed = 0
     entry_ids: dict[str, int] = {}
+    # KI-8 P1 hotfix（Claude 紧急代改，见 handoff/015）：bundled_entries() 会全量物化
+    # 词典包，开销在 57k 词条包下达百秒级；必须先确认确有词书需要安装/更新再加载。
+    needs_install = False
+    for tag in BUILTIN_WORDBOOKS:
+        expected = int(summary["counts"].get(tag, 0))
+        existing = connection.execute(
+            """
+            SELECT id, checksum FROM wordbooks
+            WHERE kind = 'builtin' AND source_tag = ?
+            ORDER BY id LIMIT 1
+            """,
+            (tag,),
+        ).fetchone()
+        if existing is None or str(existing["checksum"]) != checksum:
+            needs_install = True
+            break
+        actual = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM wordbook_entries WHERE wordbook_id = ?",
+                (existing["id"],),
+            ).fetchone()[0]
+        )
+        if actual != expected:
+            needs_install = True
+            break
+    if not needs_install:
+        return {
+            "available": True,
+            "installed": 0,
+            "entries": 0,
+            "source_version": source_version,
+            "source_sha256": checksum,
+        }
     try:
         all_entries = bundled_entries()
         entries_by_tag = {
