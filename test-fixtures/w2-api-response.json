@@ -273,5 +273,21 @@
       "wrong_stats": {"current": 1, "backup": 1, "delta": 0}
     },
     "cleanup_pending": false
+  },
+  "vocabulary_collected_page_no_match": {
+    "items": [],
+    "total": 0,
+    "limit": 120,
+    "offset": 0,
+    "counts": {
+      "total": 10000,
+      "collected_total": 5000,
+      "seeded_total": 5000,
+      "visible_total": 5000,
+      "frequent": 0,
+      "mastered": 0,
+      "pending": 0,
+      "review": 5000
+    }
   }
 }
