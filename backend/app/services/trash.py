@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .. import database as database_module
 from ..database import get_active_profile_id, new_trash_batch
 
 
@@ -12,6 +13,7 @@ RESOURCE_TABLES = {
     "profile": "question_bank_profiles",
     "paper": "papers",
     "import_job": "import_jobs",
+    "resource": "resources",
 }
 
 
@@ -370,6 +372,31 @@ def _restore_one(
             """,
             (profile_id, previous_status, resource_id),
         )
+    elif resource_type == "resource":
+        metadata = json.loads(row["metadata"] or "{}")
+        previous_status = str(metadata.get("previous_status") or "inbox")
+        resource = connection.execute(
+            "SELECT checksum FROM resources WHERE id = ?", (resource_id,)
+        ).fetchone()
+        if resource is None:
+            raise ValueError("待恢复的学习资源已不存在")
+        duplicate = connection.execute(
+            """
+            SELECT 1 FROM resources
+            WHERE checksum = ? AND deleted_at IS NULL AND id <> ?
+            """,
+            (resource["checksum"], resource_id),
+        ).fetchone()
+        if duplicate:
+            raise ValueError("相同内容的资源已经存在，无法恢复重复资源")
+        connection.execute(
+            """
+            UPDATE resources
+            SET deleted_at = NULL, status = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (previous_status, resource_id),
+        )
     else:
         raise ValueError("不支持的回收站资源类型")
 
@@ -424,6 +451,27 @@ def _purge_job_files(row: sqlite3.Row) -> None:
         Path(value).unlink(missing_ok=True)
 
 
+def _purge_resource_file(stored_path: str) -> None:
+    value = stored_path.strip()
+    if not value:
+        return
+    data_root = Path(database_module.DATABASE_PATH).parent.resolve()
+    resource_root = (data_root / "resources").resolve()
+    target = (data_root / value).resolve()
+    try:
+        target.relative_to(resource_root)
+    except ValueError:
+        return
+    if target == resource_root or (target.exists() and not target.is_file()):
+        return
+    target.unlink(missing_ok=True)
+    if target.parent != resource_root:
+        try:
+            target.parent.rmdir()
+        except OSError:
+            pass
+
+
 def purge_trash(
     connection: sqlite3.Connection,
     trash_id: int,
@@ -459,6 +507,13 @@ def purge_trash(
             connection.execute("DELETE FROM import_jobs WHERE id = ?", (resource_id,))
         elif resource_type == "profile":
             connection.execute("DELETE FROM question_bank_profiles WHERE id = ?", (resource_id,))
+        elif resource_type == "resource":
+            resource = connection.execute(
+                "SELECT stored_path FROM resources WHERE id = ?", (resource_id,)
+            ).fetchone()
+            if resource is not None:
+                _purge_resource_file(str(resource["stored_path"] or ""))
+            connection.execute("DELETE FROM resources WHERE id = ?", (resource_id,))
     connection.execute(
         "DELETE FROM trash_entries WHERE deletion_batch_id = ?",
         (row["deletion_batch_id"],),

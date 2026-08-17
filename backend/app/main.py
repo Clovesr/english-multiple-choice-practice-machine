@@ -19,6 +19,7 @@ from .routers import (
     practice,
     question_bank_profiles,
     question_banks,
+    resources,
     vocabulary,
     wrong,
 )
@@ -69,6 +70,7 @@ app.include_router(question_banks.router, prefix="/api")
 app.include_router(question_bank_profiles.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(vocabulary.router, prefix="/api")
+app.include_router(resources.router, prefix="/api")
 
 
 @app.get("/api/health")

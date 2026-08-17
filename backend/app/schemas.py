@@ -187,3 +187,28 @@ class VocabularyUpdate(BaseModel):
 
 class VocabularyReview(BaseModel):
     rating: Literal["again", "hard", "mastered"]
+
+
+class ResourceTextCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(min_length=1)
+    type: str = Field(default="note", min_length=1, max_length=60)
+    format: Literal["txt", "md"] = "md"
+    source: str = Field(default="", max_length=500)
+    source_url: str = Field(default="", max_length=2000)
+    author: str = Field(default="", max_length=300)
+    language: str = Field(default="en", min_length=1, max_length=30)
+
+
+class ResourceUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    status: Literal["inbox", "active", "archived", "needs_review"] | None = None
+    source: str | None = Field(default=None, max_length=500)
+    author: str | None = Field(default=None, max_length=300)
+    language: str | None = Field(default=None, min_length=1, max_length=30)
+
+
+class ResourceProgressUpdate(BaseModel):
+    last_segment_id: int | None = Field(default=None, ge=1)
+    scroll_ratio: float = Field(ge=0, le=1)
+    reading_ms_delta: int = Field(default=0, ge=0, le=86_400_000)
