@@ -13,6 +13,7 @@ from .config import FRONTEND_DIST
 from .database import connect, initialize_database
 from .routers import (
     ai,
+    backups,
     dashboard,
     dictionary,
     imports,
@@ -87,6 +88,7 @@ app.include_router(review.router, prefix="/api")
 app.include_router(skills.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+app.include_router(backups.router, prefix="/api")
 
 
 @app.get("/api/health")

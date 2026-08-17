@@ -242,6 +242,14 @@ class ReviewItemGrade(BaseModel):
     duration_ms: int = Field(default=0, ge=0, le=3_600_000)
 
 
+class BackupCreate(BaseModel):
+    kind: Literal["manual"] = "manual"
+
+
+class BackupRestore(BaseModel):
+    dry_run: bool = True
+
+
 class SkillCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_id: int | None = Field(default=None, ge=1)
