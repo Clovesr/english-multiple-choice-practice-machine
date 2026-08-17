@@ -3,10 +3,16 @@ import { BookOpen, Check, RefreshCw, Search, Settings, Star, Trash2 } from 'luci
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { del, get, post, put } from '../api'
+import VocabTabs from '../components/study/VocabTabs.vue'
 
 const route = useRoute()
 const items = ref<any[]>([])
 const counts = ref<any>({ total:0, frequent:0, mastered:0, pending:0, review:0 })
+const overview = ref<any>(null)
+
+async function loadOverview() {
+  try { overview.value = await get('/study/overview') } catch { /* 统计失败不阻塞单词本 */ }
+}
 const selected = ref<any>(null)
 const filter = ref('all')
 const search = ref('')
@@ -133,26 +139,30 @@ watch(search, () => {
   searchTimer = window.setTimeout(load, 250)
 })
 watch(filter, load)
-onMounted(load)
+onMounted(() => { void load(); void loadOverview() })
 </script>
 
 <template>
   <div class="page vocabulary-page">
+    <VocabTabs />
     <div class="page-head">
-      <div><span class="eyebrow">VOCABULARY BOOK</span><h1>我的单词本</h1><p class="lead">从真题语境中收集、理解并复习真正困扰你的词。</p></div>
+      <div><span class="eyebrow">MY WORDS</span><h1>生词本</h1><p class="lead">你在阅读与真题里亲手遇见的词：完整语境、笔记与记忆档案都在这里。</p></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="button ghost" @click="showDisplayDialog=true"><Settings :size="17" />显示设置</button>
-        <button class="button" @click="startReview"><BookOpen :size="17" />开始今日复习</button>
+        <RouterLink class="button" to="/study"><BookOpen :size="17" />开始今日复习</RouterLink>
       </div>
     </div>
     <div v-if="error" class="warning">{{ error }}</div>
     <div v-if="notice" class="card vocab-notice">{{ notice }}</div>
     <div class="vocab-stats">
-      <button class="card" @click="filter='all'"><span>全部单词</span><strong>{{ counts.total || 0 }}</strong></button>
+      <button class="card" @click="filter='all'"><span>词条总数（含词书）</span><strong>{{ counts.total || 0 }}</strong></button>
       <button class="card amber" @click="filter='frequent'"><span>🌟 高频生词</span><strong>{{ counts.frequent || 0 }}</strong></button>
-      <button class="card" @click="filter='review'"><span>今日待复习</span><strong>{{ counts.review || 0 }}</strong></button>
+      <RouterLink class="card" to="/study" style="text-align:inherit"><span>到期复习（记忆算法）</span><strong>{{ overview?.today ? overview.today.due_left : '—' }}</strong></RouterLink>
       <button class="card" @click="filter='mastered'"><span>已掌握</span><strong>{{ counts.mastered || 0 }}</strong></button>
       <button class="card" @click="filter='pending'"><span>等待翻译</span><strong>{{ counts.pending || 0 }}</strong></button>
+    </div>
+    <div class="card" style="margin-bottom:16px;padding:12px 16px;font-size:13px;color:var(--muted)">
+      词条总数里包含词书计划灌入的词典词条（列表中标有「词书」）。你亲手收藏、练习中遇到的词才是本页的主角；"只看我收藏的"筛选即将上线。复习统一由记忆算法安排，入口在右上角。
     </div>
 
     <section v-if="reviewMode" class="review-overlay">
@@ -189,7 +199,10 @@ onMounted(load)
 
       <section class="vocab-list card">
         <button v-for="word in items" :key="word.id" class="vocab-list-item" :class="{active:selected?.id===word.id}" @click="select(word.id)">
-          <div class="vocab-list-head"><strong><span v-if="word.is_frequent">🌟 </span>{{ word.lemma || word.term }}</strong><small>遇到 {{ word.encounter_count }} 次</small></div>
+          <div class="vocab-list-head"><strong><span v-if="word.is_frequent">🌟 </span>{{ word.lemma || word.term }}</strong>
+            <small v-if="word.source_kind === 'builtin_wordbook' && !word.encounter_count" class="pill" style="font-size:10px;padding:2px 7px">词书</small>
+            <small v-else>遇到 {{ word.encounter_count }} 次</small>
+          </div>
           <p v-if="word.translation_status==='ready'">{{ word.common_meaning || word.contextual_meaning }}</p>
           <p v-else class="pending-text">{{ translationStatusText(word.translation_status) }}</p>
           <div class="vocab-list-meta"><span>{{ word.part_of_speech }}</span><span>{{ word.study_status === 'mastered' ? '已掌握' : '学习中' }}</span></div>
@@ -238,7 +251,11 @@ onMounted(load)
             <template v-if="displayConfig.sentence || expandedAll">
               <article v-for="occurrence in selected.occurrences" :key="occurrence.id" class="occurrence">
                 <p>{{ occurrence.context_sentence }}</p>
-                <small>{{ occurrence.year || '未知年份' }} · {{ occurrence.unit_title || occurrence.unit_type }}</small>
+                <small v-if="occurrence.resource_id">
+                  阅读收藏
+                  <RouterLink :to="`/resources/${occurrence.resource_id}/read?segment=${occurrence.segment_id || ''}`" style="margin-left:8px">跳回原文 →</RouterLink>
+                </small>
+                <small v-else>{{ occurrence.year || '未知年份' }} · {{ occurrence.unit_title || occurrence.unit_type }}</small>
               </article>
             </template>
           </div>
