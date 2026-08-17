@@ -20,6 +20,7 @@
 | 0003 | courses、lessons、skills、skill_dependencies、lesson_skills、question_skills | W1 定稿 / W2 使用 |
 | 0004 | daily_tasks、learning_events、mastery_states、metrics_daily | W2 |
 | 0005 | backup_catalog | W2 |
+| 0006 | 词级 FSRS 调度、题型暂停映射、旧卡级状态无损归档 | V1 用户裁决修正 |
 
 ## 3. 新表定义
 
@@ -196,7 +197,8 @@ CREATE TABLE study_settings (
 );
 ```
 
-卡片是实际学习单元；同词、同卡型可有多个语境/搭配变体，每张卡独立调度：
+`vocabulary_cards` 保存六类题型及语境/搭配变体。0002 初始版本曾把每张卡作为独立调度单元；
+该语义已被 0006 的用户裁决修正取代：**卡片只标识呈现题型与内容快照，FSRS 调度单位是词条**。
 
 ```sql
 CREATE TABLE vocabulary_cards (
@@ -214,7 +216,8 @@ CREATE TABLE vocabulary_cards (
 
 `prompt_data/answer_data` 是版本化快照，原始事实仍在词汇子表。仅在数据充分时生成卡片；
 词典外词可入库为 `needs_enrichment`，但不得产生空白 reverse/spelling/cloze/collocation 卡。
-人工暂停的唯一事实位放在对应 `review_items.manually_suspended`，避免卡片表与调度表双写漂移。
+0002 建表时人工暂停位位于对应 `review_items.manually_suspended`；0006 将旧值迁到
+`vocabulary_card_type_settings`，最终语义为“该词条的该题型不参与轮换”。
 
 统一复习状态与只追加日志：
 
@@ -222,8 +225,8 @@ CREATE TABLE vocabulary_cards (
 CREATE TABLE review_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uuid TEXT NOT NULL UNIQUE,
-    item_type TEXT NOT NULL,              -- vocabulary_card | wrong_question（后续可扩展）
-    ref_id INTEGER NOT NULL,              -- vocabulary_card → vocabulary_cards.id
+    item_type TEXT NOT NULL,              -- vocabulary | vocabulary_card(仅归档历史) | wrong_question
+    ref_id INTEGER NOT NULL,              -- vocabulary → vocabulary_entries.id
     state TEXT NOT NULL DEFAULT 'new',    -- new | learning | review | relearning
     step INTEGER NOT NULL DEFAULT 0,
     due_at TEXT NOT NULL,
@@ -275,9 +278,10 @@ CREATE INDEX idx_review_logs_item ON review_logs(review_item_id, reviewed_at);
 `vocabulary_cards_review_item_delete` 触发器，在卡片被物理删除时同步删除其复习项，
 `review_logs` 再通过外键级联删除，避免旧词条硬删除留下孤儿调度数据。
 
-FSRS 引擎使用 **py-fsrs（MIT）**默认参数起步；`review_logs` 保全量前后状态，未来参数
-升级可从日志重算，不覆写历史。客观卡的 `answer.accept` 由后端统一展开；后端复判结果、
-自动建议评分和用户最终评分同时入日志。
+FSRS 引擎使用 **py-fsrs（MIT）**默认参数起步；0006 后每个有卡片的词条只有一个活跃
+`item_type='vocabulary'` 复习项。`review_logs.card_id` 继续记录当次实际题型，保全量前后状态，
+未来参数升级可从日志重算，不覆写历史。客观卡的 `answer.accept` 由后端统一展开；后端复判
+结果、自动建议评分和用户最终评分同时入日志。
 
 学习会话需要持久化选中的卡，保证同一 `session_id` 刷新后批次与每日上限口径不变：
 
@@ -410,11 +414,53 @@ CREATE TABLE backup_catalog (
 );
 ```
 
-## 4. 存量词汇接入 FSRS（迁移 0002 数据部分）
+### 0006 词级调度与题型开关
+
+`review_items` 增加只用于历史保全的归档元数据；归档行永不进入队列：
+
+```sql
+ALTER TABLE review_items ADD COLUMN archived_at TEXT;
+ALTER TABLE review_items ADD COLUMN archive_reason TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX idx_review_vocabulary_due
+    ON review_items(item_type, manually_suspended, state, due_at, ref_id)
+    WHERE archived_at IS NULL;
+```
+
+人工暂停从旧卡级调度行迁为“词条 × 题型”的唯一事实。一个题型存在多个语境变体时，暂停
+任一旧变体会暂停该词条的整个题型；全局 `study_settings.enabled_card_types` 再与此表取交集：
+
+```sql
+CREATE TABLE vocabulary_card_type_settings (
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    card_type TEXT NOT NULL,
+    manually_suspended INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (entry_id, card_type)
+);
+```
+
+迁移数据规则：
+
+1. 按 `vocabulary_cards.entry_id` 分组旧 `item_type='vocabulary_card'` 行，`reps` 最大者胜；
+   平手时 `due_at` 最早者胜，再以 `id` 作为确定性兜底。
+2. 胜出行原位改为 `item_type='vocabulary'、ref_id=entry_id`，保留 UUID、FSRS 全状态与其
+   原有日志外键；同词其余旧行写入 `archived_at/archive_reason`，不物理删除。
+3. `review_logs` 不改写、不重挂；`card_id` 仍指向当时作答题型，历史逐行可追溯。
+4. 迁移前已持久化的活跃 session 由旧卡级策略选出，统一结束，下一次请求按词重新选卡。
+5. 新建卡片只确保对应词条存在一个活跃词级复习项；grade API 仍收 `card_id`，先由卡片定位
+   `entry_id`，再更新该词条的唯一 FSRS 状态。
+6. 出卡轮换使用可参数化的阶段策略：new/首照面优先 forward；learning/relearning 在
+   reverse/listening 间轮换；稳定 review 在 spelling/cloze 间轮换；有显式搭配事实时周期性
+   选择 collocation。首选题型关闭或暂停时，只在剩余可用题型内确定性降级。
+
+## 4. 存量词汇接入 FSRS（迁移 0002 数据部分；最终由 0006 收敛为词级）
 
 1. 给所有旧词条回填 UUID、结构化词义/lemma/关系事实；旧 `phonetic` 只在新字段为空时复制到 `phonetic_uk`，原字段不清空。
-2. 为每个未删除旧词条至少生成一张 `forward/primary` 卡，再建
-   `review_items(item_type='vocabulary_card', ref_id=card.id)`；不得直接把复习项指向词条。
+2. 0002 为每个未删除旧词条至少生成一张 `forward/primary` 卡并建立旧式
+   `item_type='vocabulary_card'` 行；0006 随后把胜出行原位收敛为
+   `review_items(item_type='vocabulary', ref_id=entry.id)`。最终运行态不得再创建卡级调度行。
 3. 旧 `next_review_at` / `last_reviewed_at` 是**本地 naive 时间**：按迁移执行机的本地时区换算成 UTC；若原值有效，即使已过期也保留换算后的精确时刻，缺失或损坏才回退迁移时刻。
 4. 有有效 `last_reviewed_at` → `state='review'`；从未复习 → `state='new'`、`due_at=` 迁移时刻。旧 interval 只能近似初始化 stability/difficulty，评分后由正式 FSRS 接管，`scheduler_version='legacy-bootstrap-v1'` 明示来源。
 5. `vocabulary_reviews` 旧历史**逐行只读保留**，不伪造 attempt_id、不迁入 review_logs；新复习一律写 review_logs。
