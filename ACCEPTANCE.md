@@ -45,7 +45,8 @@
 6. G1：评分后重启，队列计数与 due 时间不变。
 
 ### A6 存量词汇迁移
-1. 用真实旧库（test-fixtures/existing-user-database.sqlite）启动 → 迁移自动执行，迁移前快照出现在 backups/pre-migration/。
+> 前提修正（2026-08-17）：用户从未实际使用旧版刷题机，不存在真实用户数据。夹具 `test-fixtures/existing-user-database.sqlite` 由旧版代码（main@ffe47c6）生成的仿真库充当：含已提交/中断练习会话、错题、6 种状态词条（逾期/未来到期/从未复习/已掌握/人工编辑）、旧固定间隔复习历史、本地 naive 时间戳。
+1. 用旧版夹具库启动 → 迁移自动执行，迁移前快照出现在 backups/pre-migration/。
 2. 每个旧词条至少生成正向卡并接入 FSRS；已复习过的词其正向卡 due_at 与旧 next_review_at 换算一致（本地→UTC）。
 3. vocabulary_reviews 旧历史原样保留；旧 phonetic/释义字段不被清空。
 4. 旧接口 POST /api/vocabulary/{id}/review 仍工作（评分落在正向卡上）。

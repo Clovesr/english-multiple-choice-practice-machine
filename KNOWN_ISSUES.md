@@ -23,6 +23,12 @@ schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备
 ### KI-5 ｜ P3 ｜ Python 3.14 弃用警告（asyncio.iscoroutinefunction，来自 FastAPI）
 影响：仅日志噪音。计划：等 FastAPI 升级；不自行处理。
 
+### KI-6 ｜ P2 ｜ 旧词汇复习接口未接 FSRS（契约 §6 未实现）
+`POST /api/vocabulary/{id}/review` 仍执行旧固定间隔调度（again/hard/mastered → +1/3/7 天），写 naive 本地时间到 `vocabulary_entries.next_review_at`；不更新 forward 卡的 review_items，不写 review_logs。
+复现：A6.4——对迁移后的词条调用旧接口评 hard → entry.next_review_at=+3天本地时间，卡片 due_at 不变，review_logs 0 行。
+影响：旧单词本 UI 评分与 FSRS 状态分叉；继续污染 naive 时间戳。绕行：改用新学习会话接口（前端切换后旧入口弃用）。
+主责：Codex（Issue #2 当前批次实现 API_CONTRACT §6 映射）。发现于 2026-08-17 A6 验收。
+
 ## 设计约束备忘（不是缺陷）
 
 - FTS5 trigram 对 <3 字符查询走 LIKE 回退（API_CONTRACT.md §3）；数据量到十万级片段后重新评测，必要时引入分词升级，只重建索引不动事实表。
