@@ -102,9 +102,9 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 - `StudyCard` 统一载荷：
 ```json
 {
-  "card_id": 1, "review_item_id": 2, "card_type": "forward|reverse|listening|spelling|cloze|collocation",
+  "card_id": 1, "review_item_id": 2, "entry_id": 3, "card_type": "forward|reverse|listening|spelling|cloze|collocation",
   "state": "new|learning|review|relearning",
-  "entry": { "lemma": "...", "phonetic_uk": "...", "phonetic_us": "...", "senses": [...] },
+  "entry": { "lemma": "...", "phonetic_uk": "...", "phonetic_us": "...", "memory_hint": "...", "note": "...", "senses": [...] },
   "prompt": { "text": "...", "tts_text": "...", "cloze_sentence": "...", "pairs": [...] },
   "answer": { "text": "...", "accept": ["..."], "distractors": [...] },
   "contexts": [{ "sentence": "...", "source": "..." }]
