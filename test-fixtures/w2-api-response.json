@@ -1,0 +1,257 @@
+{
+  "skill_create": {
+    "id": 1,
+    "uuid": "25efc7fd-0887-42e9-bf55-cfcc66a0d0c2",
+    "parent_id": null,
+    "name": "主旨理解",
+    "skill_type": "reading",
+    "stage": "postgraduate",
+    "difficulty": 3,
+    "status": "active",
+    "mastery_score": 0.0,
+    "evidence_count": 0,
+    "mastery_updated_at": null,
+    "created_at": "2026-08-17T14:33:32+00:00",
+    "updated_at": "2026-08-17T14:33:32+00:00"
+  },
+  "question_skills": {
+    "question_id": 1,
+    "skills": [
+      {
+        "id": 1,
+        "uuid": "25efc7fd-0887-42e9-bf55-cfcc66a0d0c2",
+        "parent_id": null,
+        "name": "主旨理解",
+        "skill_type": "reading",
+        "stage": "postgraduate",
+        "difficulty": 3,
+        "status": "active",
+        "mastery_score": 0.0,
+        "evidence_count": 0,
+        "mastery_updated_at": null,
+        "created_at": "2026-08-17T14:33:32+00:00",
+        "updated_at": "2026-08-17T14:33:32+00:00"
+      }
+    ]
+  },
+  "resource_progress": {
+    "progress": {
+      "last_segment_id": 1,
+      "scroll_ratio": 0.45,
+      "total_reading_ms": 1200,
+      "opened_count": 1,
+      "last_opened_at": "2026-08-17T14:33:32+00:00",
+      "updated_at": "2026-08-17T14:33:32+00:00"
+    }
+  },
+  "practice_submit_summary": {
+    "score": 0.0,
+    "max_score": 2.0,
+    "wrong_count": 1,
+    "correct_count": 0,
+    "question_count": 1
+  },
+  "review_queue": {
+    "items": [
+      {
+        "review_item_id": 1,
+        "item_type": "wrong_question",
+        "state": "new",
+        "due_at": "2026-08-17T14:33:32+00:00",
+        "payload": {
+          "question_id": 1,
+          "number": 1,
+          "stem": "Which option is correct?",
+          "question_type": "single_choice",
+          "options": [
+            {
+              "id": 1,
+              "stable_key": "A",
+              "original_label": "A",
+              "content": "Correct option",
+              "sequence": 1
+            },
+            {
+              "id": 2,
+              "stable_key": "B",
+              "original_label": "B",
+              "content": "Wrong option",
+              "sequence": 2
+            }
+          ],
+          "original_wrong_answer": "B",
+          "correct_answer": "A",
+          "unit_id": 1,
+          "unit_title": "阅读一",
+          "unit_type": "reading",
+          "paper_id": 1,
+          "paper_year": 2026,
+          "paper_title": "W2 响应夹具测试卷"
+        }
+      }
+    ],
+    "counts": {
+      "due": 1,
+      "overdue": 0,
+      "new": 1,
+      "done_today": 0,
+      "vocab_due": 0
+    }
+  },
+  "tasks_today": {
+    "date": "2026-08-17",
+    "items": [
+      {
+        "id": 1,
+        "task_date": "2026-08-17",
+        "task_type": "review_due",
+        "target_type": "review_queue",
+        "target_id": 0,
+        "title": "完成 1 项到期复习",
+        "priority": 100,
+        "status": "pending",
+        "generated_by_rule": "due_reviews_v1",
+        "created_at": "2026-08-17T14:33:32+00:00",
+        "completed_at": null
+      },
+      {
+        "id": 3,
+        "task_date": "2026-08-17",
+        "task_type": "redo_wrong",
+        "target_type": "wrong_queue",
+        "target_id": 0,
+        "title": "重做 1 道薄弱错题",
+        "priority": 80,
+        "status": "pending",
+        "generated_by_rule": "weak_wrong_questions_v1",
+        "created_at": "2026-08-17T14:33:32+00:00",
+        "completed_at": null
+      },
+      {
+        "id": 2,
+        "task_date": "2026-08-17",
+        "task_type": "continue_reading",
+        "target_type": "resource",
+        "target_id": 1,
+        "title": "继续阅读《W2文章》",
+        "priority": 60,
+        "status": "pending",
+        "generated_by_rule": "last_incomplete_resource_v1",
+        "created_at": "2026-08-17T14:33:32+00:00",
+        "completed_at": null
+      }
+    ]
+  },
+  "review_grade": {
+    "review_item": {
+      "id": 1,
+      "uuid": "883cd873-10e9-481b-a902-28736cdf8bed",
+      "item_type": "wrong_question",
+      "ref_id": 1,
+      "state": "learning",
+      "step": 1,
+      "due_at": "2026-08-17T14:43:32+00:00",
+      "last_review_at": "2026-08-17T14:33:32+00:00",
+      "stability": 2.3065,
+      "difficulty": 2.118103970459016,
+      "scheduled_days": 0.006944444444444444,
+      "elapsed_days": 0.0,
+      "reps": 1,
+      "lapses": 0,
+      "manually_suspended": false,
+      "scheduler": "fsrs",
+      "scheduler_version": "py-fsrs-6.3.2",
+      "created_at": "2026-08-17T14:33:32+00:00",
+      "updated_at": "2026-08-17T14:33:32+00:00"
+    },
+    "review_log_id": 1,
+    "next_due_at": "2026-08-17T14:43:32+00:00",
+    "attempt_id": "00000000-0000-4000-8000-000000000002"
+  },
+  "report_daily": {
+    "study_ms": 1700,
+    "reviews_done": 1,
+    "review_accuracy": 1.0,
+    "new_words": 0,
+    "questions_answered": 1,
+    "question_accuracy": 0.0
+  },
+  "skills_after_answer": {
+    "items": [
+      {
+        "id": 1,
+        "uuid": "25efc7fd-0887-42e9-bf55-cfcc66a0d0c2",
+        "parent_id": null,
+        "name": "主旨理解",
+        "skill_type": "reading",
+        "stage": "postgraduate",
+        "difficulty": 3,
+        "status": "active",
+        "mastery_score": 0.0,
+        "evidence_count": 1,
+        "mastery_updated_at": "2026-08-17T14:33:32+00:00",
+        "created_at": "2026-08-17T14:33:32+00:00",
+        "updated_at": "2026-08-17T14:33:32+00:00"
+      }
+    ]
+  },
+  "backup_create": {
+    "id": 1,
+    "path": "backups/catalog/backup-20260817T143332Z-ab4a76c111.zip",
+    "kind": "manual",
+    "checksum": "deb1ed732e47edb4341f3ee0c2754169302148f691a1b016c4a6f37dc8726d14",
+    "size_bytes": 18537,
+    "app_version": "0.1.0",
+    "schema_version": 5,
+    "status": "ok",
+    "created_at": "2026-08-17T14:33:32+00:00"
+  },
+  "backup_verify": {
+    "verified": true,
+    "backup": {
+      "id": 1,
+      "path": "backups/catalog/backup-20260817T143332Z-ab4a76c111.zip",
+      "kind": "manual",
+      "checksum": "deb1ed732e47edb4341f3ee0c2754169302148f691a1b016c4a6f37dc8726d14",
+      "size_bytes": 18537,
+      "app_version": "0.1.0",
+      "schema_version": 5,
+      "status": "verified",
+      "created_at": "2026-08-17T14:33:32+00:00"
+    },
+    "object_counts": {
+      "daily_tasks": 3,
+      "learning_events": 4,
+      "practice_answers": 1,
+      "practice_sessions": 1,
+      "resource_segments": 1,
+      "resources": 1,
+      "review_items": 1,
+      "review_logs": 1,
+      "vocabulary_cards": 0,
+      "vocabulary_entries": 0,
+      "wrong_stats": 1
+    }
+  },
+  "backup_restore_dry_run": {
+    "dry_run": true,
+    "can_restore": true,
+    "schema_version": {
+      "current": 5,
+      "backup": 5
+    },
+    "object_counts": {
+      "daily_tasks": {"current": 3, "backup": 3, "delta": 0},
+      "learning_events": {"current": 5, "backup": 4, "delta": -1},
+      "practice_answers": {"current": 1, "backup": 1, "delta": 0},
+      "practice_sessions": {"current": 1, "backup": 1, "delta": 0},
+      "resource_segments": {"current": 1, "backup": 1, "delta": 0},
+      "resources": {"current": 1, "backup": 1, "delta": 0},
+      "review_items": {"current": 1, "backup": 1, "delta": 0},
+      "review_logs": {"current": 1, "backup": 1, "delta": 0},
+      "vocabulary_cards": {"current": 0, "backup": 0, "delta": 0},
+      "vocabulary_entries": {"current": 0, "backup": 0, "delta": 0},
+      "wrong_stats": {"current": 1, "backup": 1, "delta": 0}
+    }
+  }
+}
