@@ -142,6 +142,47 @@ export function ratingFromKey(key: string): Rating | null {
   return key === '1' || key === '2' || key === '3' || key === '4' ? (Number(key) as Rating) : null
 }
 
+/** 会话排序：先复习后新学（百词斩式两阶段；后端排序落地前由前端保证）。 */
+export function sortReviewsFirst(cards: StudyCard[]): StudyCard[] {
+  const reviews = cards.filter((card) => card.state !== 'new')
+  const news = cards.filter((card) => card.state === 'new')
+  return [...reviews, ...news]
+}
+
+/** 同词多卡时的取卡优先级：到期复习卡优先；新卡按 认词>回忆>听音>拼写>挖空>搭配（本体先行）。 */
+const NEW_CARD_PRIORITY: Record<CardType, number> = {
+  forward: 0, reverse: 1, listening: 2, spelling: 3, cloze: 4, collocation: 5,
+}
+
+export function pickCardForWord(cards: StudyCard[]): StudyCard {
+  const review = cards.find((card) => card.state !== 'new')
+  if (review) return review
+  return [...cards].sort((a, b) => NEW_CARD_PRIORITY[a.card_type] - NEW_CARD_PRIORITY[b.card_type])[0]
+}
+
+/** 学习队列项：drill=当日重练副本（墨墨式内循环，不写长期调度）。 */
+export interface QueueItem {
+  card: StudyCard
+  drill: boolean
+  drillCount: number
+}
+
+/**
+ * 错词重练插入：把卡片副本插到 gap 张之后（不足则队尾）。
+ * 当天首次评分已写入 FSRS；重练副本只做本地清障，最多 maxDrills 次。
+ */
+export function insertDrill(
+  queue: QueueItem[],
+  item: QueueItem,
+  gap = 4,
+  maxDrills = 2,
+): QueueItem[] {
+  if (item.drillCount >= maxDrills) return queue
+  const copy: QueueItem = { card: item.card, drill: true, drillCount: item.drillCount + 1 }
+  const index = Math.min(gap, queue.length)
+  return [...queue.slice(0, index), copy, ...queue.slice(index)]
+}
+
 /** 把句子按目标词（原形+变形）切成命中/未命中片段，供模板安全高亮（不用 v-html）。 */
 export function highlightSegments(
   sentence: string,

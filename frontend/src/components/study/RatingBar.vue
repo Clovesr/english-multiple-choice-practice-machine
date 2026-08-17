@@ -1,19 +1,37 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Rating } from '../../services/study'
 
 const props = defineProps<{
   suggested?: Rating | null
   disabled?: boolean
+  /** subjective=自评（认识/模糊/忘记）；objective=客观判分确认改评；teaching=新词首学三键 */
+  mode?: 'subjective' | 'objective' | 'teaching'
 }>()
 
 const emit = defineEmits<{ (e: 'rate', rating: Rating): void }>()
 
-const buttons: Array<{ rating: Rating, label: string, hint: string }> = [
-  { rating: 1, label: '重来', hint: '1' },
-  { rating: 2, label: '困难', hint: '2' },
-  { rating: 3, label: '良好', hint: '3' },
-  { rating: 4, label: '轻松', hint: '4' },
-]
+const LABELS: Record<'subjective' | 'objective' | 'teaching', Array<{ rating: Rating, label: string }>> = {
+  subjective: [
+    { rating: 1, label: '忘记' },
+    { rating: 2, label: '模糊' },
+    { rating: 3, label: '认识' },
+    { rating: 4, label: '太简单' },
+  ],
+  objective: [
+    { rating: 1, label: '重来' },
+    { rating: 2, label: '困难' },
+    { rating: 3, label: '良好' },
+    { rating: 4, label: '轻松' },
+  ],
+  teaching: [
+    { rating: 1, label: '有点难' },
+    { rating: 3, label: '记住了' },
+    { rating: 4, label: '太简单，斩' },
+  ],
+}
+
+const buttons = computed(() => LABELS[props.mode ?? 'objective'])
 </script>
 
 <template>
@@ -28,7 +46,7 @@ const buttons: Array<{ rating: Rating, label: string, hint: string }> = [
       :data-rating="item.rating"
       @click="emit('rate', item.rating)"
     >
-      {{ item.label }}<kbd>{{ item.hint }}</kbd>
+      {{ item.label }}<kbd>{{ item.rating }}</kbd>
     </button>
   </div>
 </template>
