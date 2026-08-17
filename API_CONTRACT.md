@@ -80,6 +80,8 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 
 `POST /api/vocabulary/{entry_id}/review`（旧，评分 again|hard|mastered）：内部改走 FSRS——定位该词条的**正向卡**（无则创建），映射 again→1、hard→2、mastered→4 后按 §7 评分核心处理；响应结构保持旧格式（entry 序列化，含 next_review_at=正向卡 FSRS due_at）。前端改用新接口后，此接口标记 deprecated，保留到稳定版。
 
+`GET /api/vocabulary?scope=collected|all&status=&search=`：默认 `collected`，只返回有用户痕迹的生词（遇见/收藏、用户编辑、重点标记或任一卡已复习）；`all` 才包含尚未学习的词书灌入词。`counts` 保留 `total` 并新增 `collected_total`、`seeded_total`、`visible_total`；`status=review` 以 `review_items` 的 FSRS 到期状态为准，不再读取旧固定间隔字段。
+
 ## 7. 词汇学习（V1 冻结线，handoff 003 §4 提案 + 004 §5 修订对齐后的定稿）
 
 数据模型见 DATA_MODEL.md 0002 修订（Codex 维护）。核心原则：`vocabulary_cards` 是学习单元，每卡独立 FSRS；后端是判分最终权威；服务端展开容错规则，前端只做即时反馈。
@@ -92,6 +94,7 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 - `GET /api/wordbooks/{id}/entries?offset=&limit=&state=`
 - `GET /api/dictionary/lookup?term=` → `{ "found", "entry": { "lemma", "phonetic_uk", "phonetic_us", "pos_senses": [{ "pos", "gloss_zh", "gloss_en" }], "forms": [{ "kind", "text" }], "relations": [...], "tags": [...], "frequency_rank" } }`。阅读器选词浮层同源调用；离线可用。
 - `PUT /api/vocabulary/entries/{id}/state` `{ "study_status": "known|learning|ignored|paused|focus" }`。词条级状态控制其全部卡片是否入队；恢复词条不得清除用户单独暂停的卡片。
+- `GET /api/vocabulary?status=&search=&scope=collected|all`：默认 `scope=collected`，只返回“有用户痕迹”的生词本词条；`scope=all` 用于包含尚未学习的词书种子词。`collected` 判定为 `encounter_count>0 OR source_kind='user' OR user_edited=1 OR manually_frequent=1 OR EXISTS(该词条任一卡片 reps>0)`。响应 `counts` 保留 `total`，并增加 `collected_total`、`seeded_total`、`visible_total`；`status=review` 以 vocabulary_card 对应 review_item 的 FSRS `due_at` 为准，不再读取旧 `next_review_at`。`GET /api/vocabulary/home` 同样排除未学习种子词。（用户裁决见 handoff 017/018。）
 
 ### 7.2 学习会话
 
