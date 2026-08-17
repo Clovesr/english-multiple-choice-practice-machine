@@ -57,7 +57,7 @@ async def import_resource(
             form = await request.form()
             upload = form.get("file")
             if not isinstance(upload, UploadFile):
-                return _error(400, "missing_file", "请选择 TXT 或 Markdown 文件")
+                return _error(400, "missing_file", "请选择 TXT、Markdown、PDF 或 DOCX 文件")
             raw = await upload.read()
             arguments = {
                 "raw": raw,
