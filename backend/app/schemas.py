@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -213,8 +215,44 @@ class WordbookImportRequest(BaseModel):
 
 
 class WordbookPlanRequest(BaseModel):
-    daily_new: int = Field(default=20, ge=1, le=500)
+    daily_new: int = Field(default=20, ge=0, le=500)
     new_order: Literal["frequency", "sequence", "random"] = "frequency"
+
+
+CardType = Literal[
+    "forward",
+    "reverse",
+    "listening",
+    "spelling",
+    "cloze",
+    "collocation",
+]
+
+
+class StudyCardGrade(BaseModel):
+    attempt_id: UUID
+    rating: Literal[1, 2, 3, 4]
+    answer_given: str | None = Field(default=None, max_length=5000)
+    duration_ms: int = Field(default=0, ge=0, le=3_600_000)
+
+
+class StudySettingsUpdate(BaseModel):
+    daily_new: int | None = Field(default=None, ge=0, le=500)
+    daily_review_max: int | None = Field(default=None, ge=0, le=5000)
+    enabled_card_types: list[CardType] | None = None
+    new_card_order: Literal["frequency", "sequence", "random"] | None = None
+    leech_threshold: int | None = Field(default=None, ge=1, le=100)
+    backlog_mode: Literal["spread", "suspend_new", "focus_overdue"] | None = None
+
+
+class StudyBacklogPlanRequest(BaseModel):
+    mode: Literal["spread", "suspend_new", "focus_overdue"]
+    days: int | None = Field(default=None, ge=1, le=365)
+
+
+class StudySprintRequest(BaseModel):
+    exam_date: date
+    wordbook_id: int = Field(ge=1)
 
 
 class ResourceTextCreate(BaseModel):

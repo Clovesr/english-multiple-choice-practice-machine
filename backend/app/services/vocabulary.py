@@ -4,7 +4,6 @@ import json
 import re
 import sqlite3
 import threading
-from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -773,25 +772,6 @@ def translate_vocabulary_entry(entry_id: int) -> None:
 def review_entry(
     connection: sqlite3.Connection, entry_id: int, rating: str
 ) -> dict[str, Any]:
-    now = datetime.now()
-    delays = {"again": 1, "hard": 3, "mastered": 7}
-    next_review = now + timedelta(days=delays[rating])
-    status = "mastered" if rating == "mastered" else "learning"
-    connection.execute(
-        """
-        UPDATE vocabulary_entries
-        SET study_status = ?, last_reviewed_at = ?, next_review_at = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (status, now.isoformat(timespec="seconds"), next_review.isoformat(timespec="seconds"), entry_id),
-    )
-    connection.execute(
-        """
-        INSERT INTO vocabulary_reviews (entry_id, rating, next_review_at)
-        VALUES (?, ?, ?)
-        """,
-        (entry_id, rating, next_review.isoformat(timespec="seconds")),
-    )
-    connection.commit()
-    return _serialize_entry(connection, entry_id)
+    from .study import review_legacy_entry
+
+    return review_legacy_entry(connection, entry_id, rating)
