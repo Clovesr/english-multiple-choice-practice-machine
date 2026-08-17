@@ -209,7 +209,7 @@ def _card_payload(connection: sqlite3.Connection, card_id: int) -> dict[str, Any
         SELECT vc.*, ri.id AS review_item_id, ri.state,
                e.lemma, e.term, e.phonetic_uk, e.phonetic_us,
                e.phonetic, e.part_of_speech, e.common_meaning,
-               e.contextual_meaning
+               e.contextual_meaning, e.memory_hint, e.note
         FROM vocabulary_cards AS vc
         JOIN review_items AS ri
           ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
@@ -266,12 +266,15 @@ def _card_payload(connection: sqlite3.Connection, card_id: int) -> dict[str, Any
     return {
         "card_id": int(row["id"]),
         "review_item_id": int(row["review_item_id"]),
+        "entry_id": int(row["entry_id"]),
         "card_type": str(row["card_type"]),
         "state": str(row["state"]),
         "entry": {
             "lemma": str(row["lemma"] or row["term"] or ""),
             "phonetic_uk": str(row["phonetic_uk"] or row["phonetic"] or ""),
             "phonetic_us": str(row["phonetic_us"] or ""),
+            "memory_hint": str(row["memory_hint"] or ""),
+            "note": str(row["note"] or ""),
             "senses": senses,
         },
         "prompt": prompt,
