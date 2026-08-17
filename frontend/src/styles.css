@@ -173,8 +173,8 @@ h2, h3 { margin: 0; }
 .vocabulary-flip-leave-to { opacity:0; transform:translateY(-22px); }
 .vocab-notice { margin-bottom: 15px; color: var(--success); }
 .vocab-stats { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
-.vocab-stats button { text-align: left; padding: 16px 18px; color: var(--ink); transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }.vocab-stats button:hover { border-color: var(--line-strong); transform: translateY(-2px); box-shadow: var(--shadow); }.vocab-stats span,.vocab-stats strong { display: block; }
-.vocab-stats span { color: var(--muted); font-size: 12px; }.vocab-stats strong { font: 500 25px Georgia,serif; margin-top: 7px; }.vocab-stats .amber { background: color-mix(in srgb, var(--apricot) 60%, var(--surface)); }
+.vocab-stats > * { text-align: left; padding: 16px 18px; color: var(--ink); transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }.vocab-stats > *:hover { border-color: var(--line-strong); transform: translateY(-2px); box-shadow: var(--shadow); }.vocab-stats span,.vocab-stats strong { display: block; }
+.vocab-stats span { color: var(--muted); font-size: 12px; display:flex; align-items:center; gap:6px; }.vocab-stats strong { font: 500 25px Georgia,serif; margin-top: 7px; }.vocab-stats .amber { background: color-mix(in srgb, var(--apricot) 60%, var(--surface)); }.vocab-stats .accent { border-color: var(--primary); background: var(--primary-soft); }
 .vocabulary-layout { display: grid; grid-template-columns: 190px minmax(300px, .85fr) minmax(390px, 1.2fr); gap: 15px; align-items: start; }
 .vocab-filters { display: grid; gap: 5px; padding: 15px; position: sticky; top: 20px; }
 .vocab-filters>button { border: 0; background: transparent; color: var(--muted); padding: 10px 11px; text-align: left; border-radius: 9px; }
@@ -776,3 +776,9 @@ h2, h3 { margin: 0; }
   .bank-manager { position:fixed; left:16px; right:16px; top:90px; width:auto; max-height:70vh; overflow:auto; }
   .trash-row { align-items:flex-start; flex-direction:column; }
 }
+
+/* 生词本模块（Claude 补充） */
+.vocab-hint { display:flex; gap:10px; align-items:flex-start; padding:12px 16px; margin-bottom:16px; font-size:13px; line-height:1.7; color:var(--muted); background:color-mix(in srgb, var(--primary-soft) 55%, var(--surface)); border:1px solid var(--line); border-radius:var(--radius-lg); }
+.vocab-hint svg { flex:0 0 auto; margin-top:2px; color:var(--primary); }
+.vocab-badge { flex:0 0 auto; align-self:center; font-size:10px; padding:2px 8px; border-radius:999px; background:var(--lavender); color:var(--muted); }
+.vocab-load-more { display:grid; place-items:center; gap:6px; padding:14px; color:var(--muted); font-size:13px; }
