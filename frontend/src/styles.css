@@ -782,3 +782,4 @@ h2, h3 { margin: 0; }
 .vocab-hint svg { flex:0 0 auto; margin-top:2px; color:var(--primary); }
 .vocab-badge { flex:0 0 auto; align-self:center; font-size:10px; padding:2px 8px; border-radius:999px; background:var(--lavender); color:var(--muted); }
 .vocab-load-more { display:grid; place-items:center; gap:6px; padding:14px; color:var(--muted); font-size:13px; }
+.vocab-pane-toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; margin-bottom:14px; min-height:34px; flex-wrap:wrap; }

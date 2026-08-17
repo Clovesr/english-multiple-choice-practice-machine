@@ -12,6 +12,7 @@ import ResourcesView from './views/ResourcesView.vue'
 import ReaderView from './views/ReaderView.vue'
 import StudyView from './views/StudyView.vue'
 import WordbooksView from './views/WordbooksView.vue'
+import VocabModuleView from './views/VocabModuleView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -20,11 +21,19 @@ export default createRouter({
     { path: '/library', component: LibraryView },
     { path: '/resources', component: ResourcesView },
     { path: '/resources/:id/read', component: ReaderView },
-    { path: '/study', component: StudyView },
-    { path: '/wordbooks', component: WordbooksView },
+    {
+      // 词汇模块统一外壳；子路径保持绝对路径，历史链接全部兼容
+      path: '/vocab',
+      component: VocabModuleView,
+      redirect: '/study',
+      children: [
+        { path: '/study', component: StudyView },
+        { path: '/wordbooks', component: WordbooksView },
+        { path: '/vocabulary', component: VocabularyView },
+      ],
+    },
     { path: '/practice/:id', component: PracticeView },
     { path: '/wrong', component: WrongView },
-    { path: '/vocabulary', component: VocabularyView },
     { path: '/imports', component: ImportView },
     { path: '/assistant', component: AiAssistant },
     { path: '/settings', component: SettingsView },
