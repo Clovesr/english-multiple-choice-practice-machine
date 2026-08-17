@@ -76,7 +76,13 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
-    def _create_wordbook(self, *, size: int, name: str = "Lazy Pool") -> int:
+    def _create_wordbook(
+        self,
+        *,
+        size: int,
+        name: str = "Lazy Pool",
+        term_prefix: str = "pool",
+    ) -> int:
         from backend.app.services.vocabulary_cards import utc_now
 
         timestamp = utc_now()
@@ -94,7 +100,7 @@ class StudyApiTests(unittest.TestCase):
                 ).lastrowid
             )
             for sequence in range(1, size + 1):
-                term = f"pool-{sequence:03d}"
+                term = f"{term_prefix}-{sequence:03d}"
                 entry_id = int(
                     connection.execute(
                         """
@@ -178,14 +184,20 @@ class StudyApiTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_import_defers_cards_and_zero_daily_plan_keeps_pool_empty(self) -> None:
+    def test_import_seeds_bounded_sufficient_cards_and_zero_plan_queues_none(self) -> None:
         imported = self.client.post(
             "/api/wordbooks/import",
             json={
                 "name": "Deferred Cards",
                 "terms": [
-                    {"term": "deferred-one", "meaning": "延迟一"},
-                    {"term": "deferred-two", "meaning": "延迟二"},
+                    {
+                        "term": (
+                            "deferredword"
+                            f"{chr(97 + index // 26)}{chr(97 + index % 26)}"
+                        ),
+                        "meaning": f"延迟 {index}",
+                    }
+                    for index in range(55)
                 ],
             },
         )
@@ -193,9 +205,34 @@ class StudyApiTests(unittest.TestCase):
         wordbook_id = imported.json()["wordbook"]["id"]
         connection = connect()
         try:
+            cards = connection.execute(
+                """
+                SELECT vc.card_type, vc.prompt_data, vc.answer_data
+                FROM vocabulary_cards AS vc
+                JOIN wordbook_entries AS we ON we.entry_id = vc.entry_id
+                WHERE we.wordbook_id = ?
+                """,
+                (wordbook_id,),
+            ).fetchall()
+            self.assertTrue(cards)
+            self.assertTrue(
+                all(row["prompt_data"] and row["answer_data"] for row in cards)
+            )
             self.assertEqual(
-                connection.execute("SELECT COUNT(*) FROM vocabulary_cards").fetchone()[0],
-                0,
+                {row["card_type"] for row in cards},
+                {"forward", "reverse", "listening", "spelling"},
+            )
+            self.assertEqual(
+                connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT vc.entry_id)
+                    FROM vocabulary_cards AS vc
+                    JOIN wordbook_entries AS we ON we.entry_id = vc.entry_id
+                    WHERE we.wordbook_id = ?
+                    """,
+                    (wordbook_id,),
+                ).fetchone()[0],
+                50,
             )
         finally:
             connection.close()
@@ -347,6 +384,7 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200, updated.text)
         self.assertEqual(updated.json()["enabled_card_types"], ["forward", "spelling"])
         session = self.client.get("/api/study/session", params={"limit": 20}).json()
+        session_id = session["session_id"]
         self.assertEqual(len(session["cards"]), 2)
         self.assertEqual(
             {card["card_type"] for card in session["cards"]},
@@ -360,6 +398,10 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(backlog.status_code, 200, backlog.text)
         self.assertTrue(backlog.json()["applied"])
         self.assertEqual(backlog.json()["settings"]["backlog_mode"], "suspend_new")
+        self.assertNotEqual(
+            self.client.get("/api/study/session").json()["session_id"],
+            session_id,
+        )
 
         imported = self.client.post(
             "/api/wordbooks/import",
@@ -657,6 +699,39 @@ class StudyApiTests(unittest.TestCase):
             )
         finally:
             connection.close()
+
+    def test_sprint_exit_restores_previous_plan_from_another_wordbook(self) -> None:
+        regular_id = self._create_wordbook(
+            size=1,
+            name="Regular Plan",
+            term_prefix="regular",
+        )
+        sprint_id = self._create_wordbook(
+            size=1,
+            name="Sprint Plan",
+            term_prefix="sprint",
+        )
+        with patch(
+            "backend.app.services.wordbooks.install_bundled_wordbooks",
+            return_value={"available": True, "installed": 0, "entries": 0},
+        ):
+            regular = self.client.post(
+                f"/api/wordbooks/{regular_id}/plan",
+                json={"daily_new": 1, "new_order": "sequence"},
+            )
+        self.assertEqual(regular.status_code, 200, regular.text)
+        regular_plan_id = regular.json()["plan"]["id"]
+
+        exam_date = (datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat()
+        sprint = self.client.post(
+            "/api/study/sprint",
+            json={"exam_date": exam_date, "wordbook_id": sprint_id},
+        )
+        self.assertEqual(sprint.status_code, 200, sprint.text)
+        stopped = self.client.delete("/api/study/sprint")
+        self.assertEqual(stopped.status_code, 200, stopped.text)
+        self.assertEqual(stopped.json()["restored_plan"]["id"], regular_plan_id)
+        self.assertEqual(stopped.json()["restored_plan"]["wordbook_id"], regular_id)
 
     def test_all_six_card_types_share_one_fsrs_grade_core(self) -> None:
         collected = self._collect()

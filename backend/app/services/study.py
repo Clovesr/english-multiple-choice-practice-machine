@@ -1018,6 +1018,14 @@ def apply_backlog_plan(
         """,
         (json.dumps(saved, ensure_ascii=False, separators=(",", ":")),),
     )
+    connection.execute(
+        """
+        UPDATE study_sessions
+        SET status = 'completed', completed_at = ?
+        WHERE status = 'active'
+        """,
+        (_iso(_utc_now()),),
+    )
     connection.commit()
     return {
         "mode": mode,
@@ -1122,6 +1130,22 @@ def start_sprint(
     timestamp = utc_now()
     connection.execute("BEGIN IMMEDIATE")
     try:
+        current_plan = connection.execute(
+            "SELECT id, mode FROM study_plans WHERE active = 1 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if current_plan is not None and str(current_plan["mode"]) == "normal":
+            connection.execute(
+                """
+                INSERT INTO app_settings(key, value)
+                VALUES ('study_sprint_previous_plan_id', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (str(current_plan["id"]),),
+            )
+        elif current_plan is None:
+            connection.execute(
+                "DELETE FROM app_settings WHERE key = 'study_sprint_previous_plan_id'"
+            )
         generate_wordbook_card_pool(
             connection,
             wordbook_id,
@@ -1199,19 +1223,36 @@ def delete_sprint(connection: sqlite3.Connection) -> dict[str, Any]:
         "UPDATE study_plans SET active = 0, updated_at = ? WHERE id = ?",
         (timestamp, sprint["id"]),
     )
-    normal = connection.execute(
-        """
-        SELECT * FROM study_plans
-        WHERE mode = 'normal' AND wordbook_id = ?
-        ORDER BY id DESC LIMIT 1
-        """,
-        (sprint["wordbook_id"],),
+    previous = connection.execute(
+        "SELECT value FROM app_settings WHERE key = 'study_sprint_previous_plan_id'"
     ).fetchone()
+    normal = None
+    if previous is not None:
+        try:
+            previous_id = int(previous["value"])
+        except (TypeError, ValueError):
+            previous_id = 0
+        normal = connection.execute(
+            "SELECT * FROM study_plans WHERE id = ? AND mode = 'normal'",
+            (previous_id,),
+        ).fetchone()
+    if normal is None:
+        normal = connection.execute(
+            """
+            SELECT * FROM study_plans
+            WHERE mode = 'normal' AND wordbook_id = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (sprint["wordbook_id"],),
+        ).fetchone()
     if normal is not None:
         connection.execute(
             "UPDATE study_plans SET active = 1, updated_at = ? WHERE id = ?",
             (timestamp, normal["id"]),
         )
+    connection.execute(
+        "DELETE FROM app_settings WHERE key = 'study_sprint_previous_plan_id'"
+    )
     connection.execute(
         "UPDATE study_sessions SET status = 'completed', completed_at = ? WHERE status = 'active'",
         (timestamp,),

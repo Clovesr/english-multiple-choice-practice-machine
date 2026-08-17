@@ -535,6 +535,13 @@ def import_wordbook(
                         "status": "needs_enrichment",
                     }
                 )
+        generate_wordbook_card_pool(
+            connection,
+            wordbook_id,
+            new_order="sequence",
+            max_entries=min(50, len(seen_entries)),
+            generation_source="imported_wordbook",
+        )
         connection.commit()
     except Exception:
         connection.rollback()
