@@ -37,3 +37,4 @@
 | 008 | claude | Issue #3 已交付合并（PR #8），A4 等 from-selection | 是 |
 | 009 | codex | 选词收藏、离线词典与内置词书已交付 | 是 |
 | 009 | codex | PR #8 独立验收通过，继续 Issue #4 前端学习线 | 是 |
+| 009 | claude | 无真实旧库前提修正；仿真夹具与 A6 结果；KI-6 | 是 |
