@@ -132,14 +132,18 @@ def read_entries(path: Path) -> list[Entry]:
                 for tag in TARGET_TAGS
                 if tag in {value.casefold() for value in str(row.get("tag") or "").split()}
             )
-            if not tags:
+            bnc_rank = integer(str(row.get("bnc") or ""))
+            frq_rank = integer(str(row.get("frq") or ""))
+            # The three target tags define the bundled wordbooks.  The
+            # dictionary itself also keeps frequency-ranked vocabulary so a
+            # reader selection such as "resilience" can still be enriched
+            # offline even when ECDICT does not assign it an exam tag.
+            if not tags and not (bnc_rank or frq_rank):
                 continue
             lemma = clean_text(str(row.get("word") or ""))
             key = normalize_term(lemma)
             if not key:
                 continue
-            bnc_rank = integer(str(row.get("bnc") or ""))
-            frq_rank = integer(str(row.get("frq") or ""))
             entry = Entry(
                 dictionary_key=key,
                 lemma=lemma,
@@ -215,6 +219,7 @@ def build_bundle(
                 ("source_sha256", checksum),
                 ("license", "MIT"),
                 ("tags", "cet4,cet6,ky"),
+                ("selection", "target-tags-or-frequency-ranked"),
             ),
         )
         tag_counts = {tag: 0 for tag in TARGET_TAGS}

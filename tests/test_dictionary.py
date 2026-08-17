@@ -60,6 +60,16 @@ class DictionaryServiceTests(unittest.TestCase):
                         "bnc": "900",
                         "exchange": "p:practiced/i:practicing/3:practices",
                     },
+                    {
+                        "word": "serendipity",
+                        "phonetic": "ˌserənˈdɪpəti",
+                        "definition": "a fortunate accidental discovery",
+                        "translation": "n. 意外发现珍宝的好运",
+                        "pos": "n.",
+                        "tag": "ielts gre",
+                        "bnc": "14063",
+                        "frq": "10578",
+                    },
                 )
             )
         self.bundle = Path(self.temp.name) / "dictionary.dbpkg"
@@ -82,12 +92,20 @@ class DictionaryServiceTests(unittest.TestCase):
         self.assertEqual(inflected["entry"]["matched_form"], "practicing")
         self.assertFalse(lookup_dictionary("not-in-dictionary", path=self.bundle)["found"])
 
+        ranked = lookup_dictionary("serendipity", path=self.bundle)
+        self.assertTrue(ranked["found"])
+        self.assertEqual(ranked["entry"]["tags"], [])
+
     def test_tag_listing_and_summary(self) -> None:
         self.assertEqual(len(tagged_entries("cet6", path=self.bundle)), 1)
         self.assertEqual(len(tagged_entries("ky", path=self.bundle)), 2)
         summary = dictionary_summary(path=self.bundle)
         self.assertEqual(summary["counts"], {"cet4": 2, "cet6": 1, "ky": 2})
         self.assertEqual(summary["metadata"]["source_commit"], "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b")
+        self.assertEqual(
+            summary["metadata"]["selection"],
+            "target-tags-or-frequency-ranked",
+        )
 
     def test_missing_bundle_has_readable_error(self) -> None:
         with self.assertRaisesRegex(DictionaryUnavailableError, "离线词典资源不存在"):
