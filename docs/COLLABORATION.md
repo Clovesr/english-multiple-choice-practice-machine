@@ -31,11 +31,12 @@ main            稳定版本（只接受 develop-v1 的发布合并）
 
 ## 3. 每日节奏（规划书 15.4）
 
-1. **开发前**：拉取 develop-v1；读当日 Issue；复述验收标准到 PR 描述里。
+1. **开发前**：拉取 develop-v1；**读 handoff/ 新回执**；读当日 Issue；复述验收标准到 PR 描述里。
 2. **开发中**：小步提交；先写测试或与测试同步；禁止顺手加范围外功能（发现需求缺口 → 写入 KNOWN_ISSUES 延后需求）。
 3. **集成顺序**：Codex 后端 PR 先合并（契约实现落地）→ Claude 拉取 develop-v1 再合并前端 PR。接口有变化时必须先更新 API_CONTRACT.md。
 4. **自动检查**（每个 PR 本地必跑）：后端 `pytest tests/ -q`；前端 `pnpm build`（含 vue-tsc 类型检查）+ `pnpm test`（vitest 引入后）。
 5. **人工验收**：用户用真实文件走当日 ACCEPTANCE 场景，在 Issue 里记录通过/失败。
+6. **收工**：写 handoff/ 回执（做了什么、裁决了什么、对方需要什么），随代码提交。
 
 ## 4. 冲突与红线（规划书 15.6）
 

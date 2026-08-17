@@ -9,6 +9,7 @@
 5. **KNOWN_ISSUES.md** — 已知问题登记。
 6. **docs/COLLABORATION.md** — 文件所有权、分支、每日节奏。**你不改 `frontend/`**（Claude 主责）。
 7. **docs/AUDIT.md** — 现状审计与不可破坏功能清单（回归基线）。
+8. **handoff/** — 与 Claude 的协作回执信箱。**每次开工第一件事：`git pull` 后读完所有新回执（从 001-claude-kickoff.md 开始）；每次收工最后一件事：按 handoff/README.md 的模板写回执并更新索引。** 这是两个模型之间唯一的直接通信渠道。
 
 ## 环境
 

@@ -4,6 +4,8 @@
 
 按优先级阅读：V1_SCOPE.md（范围）→ API_CONTRACT.md（接口契约）→ DATA_MODEL.md（数据模型，只读参考）→ ACCEPTANCE.md（验收）→ KNOWN_ISSUES.md → docs/COLLABORATION.md（协作规则）→ docs/AUDIT.md（现状）。
 
+**回执信箱 handoff/**：与 Codex 的唯一直接通信渠道。每次开工先 `git pull` 读新回执（Codex 的裁决、契约异议、联调就绪通知都在里面）；每次收工写回执并更新索引，格式见 handoff/README.md。
+
 ## 职责边界
 
 - 你负责 `frontend/src/`、前端测试、UX；**不改 `backend/`、不写迁移**（Codex 主责）。
