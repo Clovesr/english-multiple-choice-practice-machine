@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHint, highlightSegments, isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, ratingFromKey, suggestedRating } from './study'
+import { buildHint, highlightSegments, insertDrill, isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, ratingFromKey, sortReviewsFirst, suggestedRating } from './study'
 
 describe('normalizeAnswer', () => {
   it('小写、去空白、压缩空格、NFKC', () => {
@@ -103,5 +103,32 @@ describe('buildHint', () => {
   })
   it('零级无提示', () => {
     expect(buildHint(0, 'ability', 'x')).toBeNull()
+  })
+})
+
+describe('sortReviewsFirst', () => {
+  it('复习卡排在新卡前，组内相对顺序保持', () => {
+    const make = (id: number, state: string) => ({ card_id: id, state } as any)
+    const sorted = sortReviewsFirst([make(1, 'new'), make(2, 'review'), make(3, 'new'), make(4, 'learning')])
+    expect(sorted.map(c => c.card_id)).toEqual([2, 4, 1, 3])
+  })
+})
+
+describe('insertDrill', () => {
+  const item = (id: number, drillCount = 0, drill = false) => ({ card: { card_id: id } as any, drill, drillCount })
+  it('副本插到 gap 张之后并计数', () => {
+    const queue = [item(1), item(2), item(3), item(4), item(5), item(6)]
+    const next = insertDrill(queue, item(9), 4)
+    expect(next.map(q => q.card.card_id)).toEqual([1, 2, 3, 4, 9, 5, 6])
+    expect(next[4].drill).toBe(true)
+    expect(next[4].drillCount).toBe(1)
+  })
+  it('队列不足 gap 时插到队尾', () => {
+    const next = insertDrill([item(1)], item(9), 4)
+    expect(next.map(q => q.card.card_id)).toEqual([1, 9])
+  })
+  it('达到重练上限不再插入', () => {
+    const queue = [item(1)]
+    expect(insertDrill(queue, item(9, 2), 4, 2)).toBe(queue)
   })
 })

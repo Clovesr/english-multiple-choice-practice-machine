@@ -20,6 +20,8 @@ import RatingBar from './RatingBar.vue'
 const props = defineProps<{
   card: StudyCard
   speechAvailable: boolean
+  /** 当日重练副本（错词内循环），评分只做本地清障 */
+  drill?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -47,6 +49,13 @@ const objective = computed(() => isObjectiveCard(props.card) && !isRecallReverse
 const recallReverse = computed(() => isRecallReverse(props.card))
 const suggested = computed<Rating | null>(() =>
   objective.value && localCorrect.value !== null ? suggestedRating(localCorrect.value) : null)
+
+/** 新词首照面 = 教学模式：先教后测（百词斩式），直接展示全部内容 */
+const teaching = computed(() =>
+  props.card.state === 'new' && !props.drill
+  && (props.card.card_type === 'forward' || recallReverse.value))
+
+const ratingMode = computed<'subjective' | 'objective'>(() => (objective.value ? 'objective' : 'subjective'))
 
 /** 反向/搭配卡的选项 = 正确答案 + 干扰项，洗牌展示 */
 const options = computed(() => {
@@ -86,7 +95,7 @@ const FORM_LABELS: Record<string, string> = {
   p: '过去式', d: '过去分词', i: '现在分词', '3': '第三人称', r: '比较级', t: '最高级', s: '复数', '0': '原形', '1': '原形变体',
 }
 
-watch(() => props.card.card_id, () => {
+function initCard() {
   revealed.value = false
   typedAnswer.value = ''
   localCorrect.value = null
@@ -94,8 +103,18 @@ watch(() => props.card.card_id, () => {
   startedAt.value = Date.now()
   hintLevel.value = 0
   dictExtra.value = null
-  if (props.card.card_type === 'listening') void playAudio()
-})
+  if (teaching.value) {
+    // 教学模式：直接翻开 + 自动发音
+    revealed.value = true
+    void fetchDictExtra()
+    if (props.speechAvailable) void playAudio()
+  } else if (props.card.card_type === 'listening') {
+    void playAudio()
+  }
+}
+
+watch(() => [props.card.card_id, props.drill], initCard)
+onMounted(initCard)
 
 function playAudio(accent: 'us' | 'uk' = 'us') {
   const text = props.card.prompt.tts_text || props.card.entry.lemma
@@ -157,8 +176,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <article class="card study-card">
     <header class="study-card-head">
-      <span class="pill">{{ typeLabels[card.card_type] }}</span>
-      <span v-if="card.state === 'new'" class="pill" style="background:var(--lavender)">新卡</span>
+      <span v-if="teaching" class="pill" style="background:var(--lavender)">新词学习</span>
+      <span v-else class="pill">{{ typeLabels[card.card_type] }}</span>
+      <span v-if="drill" class="pill" style="background:var(--apricot)">重练</span>
       <span style="flex:1" />
       <button
         v-if="hidesWord && !revealed"
@@ -234,7 +254,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </template>
 
       <template v-else>
-        <button v-if="!revealed" class="button" type="button" @click="reveal">显示答案<kbd class="key-hint">空格</kbd></button>
+        <button v-if="!revealed && !teaching" class="button" type="button" @click="reveal">显示答案<kbd class="key-hint">空格</kbd></button>
       </template>
     </section>
 
@@ -298,8 +318,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </blockquote>
       </div>
 
-      <RatingBar :suggested="suggested" @rate="rate" />
-      <p class="rating-note" v-if="suggested">已按判定结果建议评分，可自行改选（1-4 键）。</p>
+      <RatingBar :suggested="suggested" :mode="teaching ? 'teaching' : ratingMode" @rate="rate" />
+      <p class="rating-note" v-if="teaching">这是新词的第一次见面：记住了就继续，之后会按记忆节奏用不同题型考你。</p>
+      <p class="rating-note" v-else-if="suggested">已按判定结果建议评分，可自行改选（1-4 键）。</p>
     </section>
 
     <footer class="study-foot">

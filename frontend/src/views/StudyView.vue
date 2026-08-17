@@ -5,6 +5,7 @@ import type { Ref } from 'vue'
 import type { ApiError } from '../api'
 import {
   type CardType,
+  type QueueItem,
   type Rating,
   type StudyCard,
   type StudyOverview,
@@ -13,8 +14,10 @@ import {
   getStudySession,
   getStudySettings,
   gradeStudyCard,
+  insertDrill,
   newAttemptId,
   putStudySettings,
+  sortReviewsFirst,
   suspendStudyCard,
 } from '../services/study'
 import { getCapability } from '../services/speech'
@@ -25,7 +28,9 @@ const moduleOverview = inject<{ overview: Ref<StudyOverview | null>, refresh: ()
 
 const session = ref<StudySession | null>(null)
 const settings = ref<StudySettings | null>(null)
-const queue = ref<StudyCard[]>([])
+const queue = ref<QueueItem[]>([])
+const sessionDone = ref(0)
+const sessionPlanned = ref(0)
 const loading = ref(true)
 const backendReady = ref(true)
 const loadError = ref('')
@@ -52,6 +57,11 @@ function dedupeByWord(cards: StudyCard[]): StudyCard[] {
   })
 }
 
+function toQueue(cards: StudyCard[]): QueueItem[] {
+  // 先复习后新学（百词斩两阶段），再包装为队列项
+  return sortReviewsFirst(dedupeByWord(cards)).map((card) => ({ card, drill: false, drillCount: 0 }))
+}
+
 const cardTypeLabels: Record<CardType, string> = {
   forward: '认词', reverse: '辨义', listening: '听音', spelling: '拼写', cloze: '挖空', collocation: '搭配',
 }
@@ -66,7 +76,8 @@ async function load(refetch = false) {
   try {
     session.value = await getStudySession(20)
     lastFetchHadCards.value = session.value.cards.length > 0
-    queue.value = dedupeByWord(session.value.cards)
+    queue.value = toQueue(session.value.cards)
+    sessionPlanned.value = sessionDone.value + queue.value.length
     // 整批都是本会话已见过的词 → 视为清空，避免无限补拉
     if (!queue.value.length && session.value.cards.length) lastFetchHadCards.value = false
     void loadOverview()
@@ -117,17 +128,36 @@ function toggleCardType(type: CardType) {
 async function onGrade(payload: { rating: Rating, answer_given?: string, duration_ms: number }) {
   if (!current.value || grading.value) return
   grading.value = true
-  const card = current.value
+  const item = current.value
   try {
-    await gradeStudyCard(card.card_id, { attempt_id: newAttemptId(), ...payload })
-    encounteredLemmas.add(card.entry.lemma.toLowerCase())
-    queue.value = queue.value.slice(1)
-    doneCount.value += 1
-    if (session.value) session.value.counts.done_today += 1
+    if (item.drill) {
+      // 重练副本：当天首次评分已写入调度，这里只做本地清障（墨墨：非首次照面不影响长期排期）
+      queue.value = payload.rating <= 2
+        ? insertDrill(queue.value.slice(1), item)
+        : queue.value.slice(1)
+    } else {
+      await gradeStudyCard(item.card.card_id, { attempt_id: newAttemptId(), ...payload })
+      encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
+      let next = queue.value.slice(1)
+      // 记错/模糊的词：几张卡后当日重练，直到过关
+      if (payload.rating <= 2) next = insertDrill(next, item)
+      queue.value = next
+      doneCount.value += 1
+      sessionDone.value += 1
+      if (session.value) session.value.counts.done_today += 1
+    }
     if (!queue.value.length && lastFetchHadCards.value) await load(true) // 增量补池
     else if (doneCount.value % 5 === 0) void loadOverview()
   } catch (cause) {
-    loadError.value = `评分保存失败：${(cause as Error).message}。这张卡留在队列里，可重试。`
+    const error = cause as ApiError
+    if (error.status === 409) {
+      // 卡片状态在批次创建后已变（如被暂停）：移出继续，不阻塞学习流
+      encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
+      queue.value = queue.value.slice(1)
+      if (!queue.value.length && lastFetchHadCards.value) await load(true)
+    } else {
+      loadError.value = `评分保存失败：${error.message}。这张卡留在队列里，可重试。`
+    }
   } finally {
     grading.value = false
   }
@@ -135,14 +165,15 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
 
 async function onSkip() {
   if (!current.value) return
-  const card = current.value
+  const item = current.value
+  if (item.drill) { queue.value = queue.value.slice(1); return }
   try {
-    await suspendStudyCard(card.card_id)
-    encounteredLemmas.add(card.entry.lemma.toLowerCase())
+    await suspendStudyCard(item.card.card_id)
+    encounteredLemmas.add(item.card.entry.lemma.toLowerCase())
     queue.value = queue.value.slice(1)
     if (!queue.value.length && lastFetchHadCards.value) await load(true)
   } catch {
-    queue.value = [...queue.value.slice(1), card]
+    queue.value = [...queue.value.slice(1), item]
   }
 }
 
@@ -202,8 +233,19 @@ onMounted(async () => {
     </div>
 
     <template v-else-if="current">
-      <StudyCardView :card="current" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" />
+      <div class="session-progress" aria-hidden="true">
+        <div class="session-progress-bar"><div :style="`width:${sessionPlanned ? Math.min(100, Math.round(sessionDone / sessionPlanned * 100)) : 0}%`" /></div>
+        <small>{{ sessionDone }} / {{ sessionPlanned }}<template v-if="current.drill"> · 重练不计入</template></small>
+      </div>
+      <StudyCardView :card="current.card" :drill="current.drill" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" />
     </template>
+
+<style scoped>
+.session-progress { max-width: 680px; margin: 0 auto 10px; display: flex; align-items: center; gap: 12px; }
+.session-progress-bar { flex: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.session-progress-bar div { height: 100%; background: var(--primary); transition: width .25s ease; }
+.session-progress small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+</style>
 
     <div v-else class="card empty">
       <PartyPopper :size="26" style="color:var(--primary)" />
