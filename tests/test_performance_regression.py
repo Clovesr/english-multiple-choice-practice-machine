@@ -35,9 +35,9 @@ class RealScalePerformanceRegressionTests(unittest.TestCase):
                 INSERT INTO vocabulary_entries(
                     uuid, term, normalized_term, lemma, common_meaning,
                     translation_status, enrichment_status, encounter_count,
-                    study_status, created_at, updated_at, last_seen_at
+                    study_status, source_kind, created_at, updated_at, last_seen_at
                 ) VALUES (?, ?, ?, ?, ?, 'ready', 'ready', 0,
-                          'learning', ?, ?, ?)
+                          'learning', 'builtin_wordbook', ?, ?, ?)
                 """,
                 (
                     (
@@ -179,6 +179,7 @@ class RealScalePerformanceRegressionTests(unittest.TestCase):
         from backend.app.services.study import create_or_resume_session, get_overview
         from backend.app.services.vocabulary import local_similar_matches
         from backend.app.services.wordbooks import list_wordbooks
+        from backend.app.routers.vocabulary import list_entries
 
         with connect() as connection:
             with patch(
@@ -206,6 +207,20 @@ class RealScalePerformanceRegressionTests(unittest.TestCase):
             elapsed, overview = self._timed_call(get_overview, connection)
             self.assertLess(elapsed, MAX_RESPONSE_SECONDS)
             self.assertGreaterEqual(overview["overdue_total"], ENTRY_COUNT // 2)
+
+            elapsed, vocabulary = self._timed_call(
+                list_entries,
+                status="all",
+                search="definitely-not-in-the-fixture",
+                scope="collected",
+                connection=connection,
+            )
+            self.assertLess(elapsed, MAX_RESPONSE_SECONDS)
+            self.assertEqual(vocabulary["items"], [])
+            self.assertEqual(
+                vocabulary["counts"]["collected_total"], ENTRY_COUNT // 2
+            )
+            self.assertEqual(vocabulary["counts"]["seeded_total"], ENTRY_COUNT // 2)
 
             started = time.perf_counter()
             matches = local_similar_matches(connection, [1, 2, 3])

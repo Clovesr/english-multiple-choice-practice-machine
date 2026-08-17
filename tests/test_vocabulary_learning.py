@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -119,6 +120,113 @@ class VocabularyLearningApiTests(unittest.TestCase):
         self.assertEqual(lookup.status_code, 200)
         self.assertTrue(lookup.json()["found"])
         self.assertEqual(lookup.json()["entry"]["lemma"], "ability")
+
+    def test_vocabulary_defaults_to_collected_scope_and_uses_card_due_state(self) -> None:
+        from backend.app.database import connect
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        due = (now - timedelta(days=1)).isoformat()
+        with connect() as connection:
+            entries = (
+                ("user-trace", "user", 0, 0, 0),
+                ("seeded-unseen", "builtin_wordbook", 0, 0, 0),
+                ("seeded-edited", "builtin_wordbook", 0, 1, 0),
+                ("seeded-reviewed", "builtin_wordbook", 0, 0, 0),
+                ("seeded-frequent", "builtin_wordbook", 0, 0, 1),
+            )
+            ids: dict[str, int] = {}
+            for term, source_kind, encounters, edited, frequent in entries:
+                ids[term] = int(
+                    connection.execute(
+                        """
+                        INSERT INTO vocabulary_entries(
+                            uuid, term, normalized_term, lemma, common_meaning,
+                            translation_status, enrichment_status, encounter_count,
+                            study_status, source_kind, user_edited, manually_frequent,
+                            created_at, updated_at, last_seen_at
+                        ) VALUES (?, ?, ?, ?, ?, 'ready', 'ready', ?, 'learning',
+                                  ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(uuid4()),
+                            term,
+                            term,
+                            term,
+                            f"{term} meaning",
+                            encounters,
+                            source_kind,
+                            edited,
+                            frequent,
+                            now.isoformat(),
+                            now.isoformat(),
+                            now.isoformat(),
+                        ),
+                    ).lastrowid
+                )
+            card_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO vocabulary_cards(
+                        uuid, entry_id, card_type, variant_key, generation_source,
+                        prompt_data, answer_data, created_at, updated_at
+                    ) VALUES (?, ?, 'forward', 'primary', 'scope-test', '{}', '{}', ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        ids["seeded-reviewed"],
+                        now.isoformat(),
+                        now.isoformat(),
+                    ),
+                ).lastrowid
+            )
+            connection.execute(
+                """
+                INSERT INTO review_items(
+                    uuid, item_type, ref_id, state, due_at, reps,
+                    scheduler_version, created_at, updated_at
+                ) VALUES (?, 'vocabulary_card', ?, 'review', ?, 1,
+                          'scope-test', ?, ?)
+                """,
+                (str(uuid4()), card_id, due, now.isoformat(), now.isoformat()),
+            )
+            connection.commit()
+
+        collected = self.client.get("/api/vocabulary")
+        self.assertEqual(collected.status_code, 200, collected.text)
+        payload = collected.json()
+        self.assertEqual(
+            {item["term"] for item in payload["items"]},
+            {"user-trace", "seeded-edited", "seeded-reviewed", "seeded-frequent"},
+        )
+        self.assertTrue(all(item["is_collected"] for item in payload["items"]))
+        self.assertEqual(payload["counts"]["total"], 5)
+        self.assertEqual(payload["counts"]["collected_total"], 4)
+        self.assertEqual(payload["counts"]["seeded_total"], 1)
+        self.assertEqual(payload["counts"]["visible_total"], 4)
+        self.assertEqual(payload["counts"]["review"], 1)
+
+        all_entries = self.client.get("/api/vocabulary", params={"scope": "all"})
+        self.assertEqual(all_entries.status_code, 200, all_entries.text)
+        self.assertEqual(len(all_entries.json()["items"]), 5)
+        self.assertEqual(all_entries.json()["counts"]["visible_total"], 5)
+        unseen = next(
+            item
+            for item in all_entries.json()["items"]
+            if item["term"] == "seeded-unseen"
+        )
+        self.assertFalse(unseen["is_collected"])
+
+        due_entries = self.client.get(
+            "/api/vocabulary", params={"status": "review"}
+        )
+        self.assertEqual(due_entries.status_code, 200, due_entries.text)
+        self.assertEqual(
+            [item["term"] for item in due_entries.json()["items"]],
+            ["seeded-reviewed"],
+        )
+        home = self.client.get("/api/vocabulary/home", params={"limit": 20})
+        self.assertEqual(home.status_code, 200, home.text)
+        self.assertNotIn("seeded-unseen", {item["term"] for item in home.json()["items"]})
 
     def test_builtin_wordbooks_import_report_and_plan(self) -> None:
         response = self.client.get("/api/wordbooks")
