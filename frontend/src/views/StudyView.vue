@@ -16,6 +16,7 @@ import {
   gradeStudyCard,
   insertDrill,
   newAttemptId,
+  pickCardForWord,
   putStudySettings,
   sortReviewsFirst,
   suspendStudyCard,
@@ -48,13 +49,16 @@ const current = computed(() => queue.value[0] ?? null)
 const encounteredLemmas = new Set<string>()
 
 function dedupeByWord(cards: StudyCard[]): StudyCard[] {
-  const batchSeen = new Set<string>()
-  return cards.filter((card) => {
+  const byLemma = new Map<string, StudyCard[]>()
+  for (const card of cards) {
     const key = card.entry.lemma.toLowerCase()
-    if (encounteredLemmas.has(key) || batchSeen.has(key)) return false
-    batchSeen.add(key)
-    return true
-  })
+    if (encounteredLemmas.has(key)) continue
+    const bucket = byLemma.get(key)
+    if (bucket) bucket.push(card)
+    else byLemma.set(key, [card])
+  }
+  // 同词多卡：到期复习优先；全新词取"本体先行"优先级（认词>回忆>听音>拼写>挖空>搭配）
+  return [...byLemma.values()].map(pickCardForWord)
 }
 
 function toQueue(cards: StudyCard[]): QueueItem[] {

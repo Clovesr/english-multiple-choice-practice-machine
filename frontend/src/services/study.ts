@@ -149,6 +149,17 @@ export function sortReviewsFirst(cards: StudyCard[]): StudyCard[] {
   return [...reviews, ...news]
 }
 
+/** 同词多卡时的取卡优先级：到期复习卡优先；新卡按 认词>回忆>听音>拼写>挖空>搭配（本体先行）。 */
+const NEW_CARD_PRIORITY: Record<CardType, number> = {
+  forward: 0, reverse: 1, listening: 2, spelling: 3, cloze: 4, collocation: 5,
+}
+
+export function pickCardForWord(cards: StudyCard[]): StudyCard {
+  const review = cards.find((card) => card.state !== 'new')
+  if (review) return review
+  return [...cards].sort((a, b) => NEW_CARD_PRIORITY[a.card_type] - NEW_CARD_PRIORITY[b.card_type])[0]
+}
+
 /** 学习队列项：drill=当日重练副本（墨墨式内循环，不写长期调度）。 */
 export interface QueueItem {
   card: StudyCard

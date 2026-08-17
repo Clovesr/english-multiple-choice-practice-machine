@@ -50,10 +50,9 @@ const recallReverse = computed(() => isRecallReverse(props.card))
 const suggested = computed<Rating | null>(() =>
   objective.value && localCorrect.value !== null ? suggestedRating(localCorrect.value) : null)
 
-/** 新词首照面 = 教学模式：先教后测（百词斩式），直接展示全部内容 */
-const teaching = computed(() =>
-  props.card.state === 'new' && !props.drill
-  && (props.card.card_type === 'forward' || recallReverse.value))
+/** 新词首照面 = 教学模式：不论题型，第一面永远是"认识本体"（词形+发音+释义全展示），
+ *  题型测验从第二次照面开始。重练副本除外（教过之后的当日巩固）。 */
+const teaching = computed(() => props.card.state === 'new' && !props.drill)
 
 const ratingMode = computed<'subjective' | 'objective'>(() => (objective.value ? 'objective' : 'subjective'))
 
@@ -190,7 +189,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- 提示区 -->
     <section class="study-prompt">
-      <template v-if="card.card_type === 'forward'">
+      <template v-if="teaching || card.card_type === 'forward'">
         <h2 class="study-word">{{ card.entry.lemma }}</h2>
         <div class="phonetic-row">
           <button v-if="speechAvailable" class="phonetic-chip" type="button" @click="playAudio('uk')">
@@ -233,8 +232,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <p v-if="hint && !revealed" class="hint-line">{{ hint }}</p>
     </section>
 
-    <!-- 作答区 -->
-    <section class="study-answer-zone">
+    <!-- 作答区（教学模式无测验） -->
+    <section v-if="!teaching" class="study-answer-zone">
       <template v-if="(card.card_type === 'reverse' && !recallReverse) || card.card_type === 'collocation'">
         <OptionList :options="options" :correct="[card.answer.text ?? '', ...(card.answer.accept ?? [])]" @answered="onOptionAnswered" />
       </template>
@@ -260,7 +259,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- 词详情区（翻面后） -->
     <section v-if="revealed" class="study-reveal">
-      <div class="reveal-word-row">
+      <div v-if="!teaching && card.card_type !== 'forward'" class="reveal-word-row">
         <strong class="reveal-word">{{ card.entry.lemma }}</strong>
         <div class="phonetic-row">
           <button v-if="speechAvailable" class="phonetic-chip" type="button" @click="playAudio('uk')">

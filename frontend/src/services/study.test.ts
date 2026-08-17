@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHint, highlightSegments, insertDrill, isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, ratingFromKey, sortReviewsFirst, suggestedRating } from './study'
+import { buildHint, highlightSegments, insertDrill, isObjectiveCard, isRecallReverse, judgeLocally, newAttemptId, normalizeAnswer, pickCardForWord, ratingFromKey, sortReviewsFirst, suggestedRating } from './study'
 
 describe('normalizeAnswer', () => {
   it('小写、去空白、压缩空格、NFKC', () => {
@@ -130,5 +130,18 @@ describe('insertDrill', () => {
   it('达到重练上限不再插入', () => {
     const queue = [item(1)]
     expect(insertDrill(queue, item(9, 2), 4, 2)).toBe(queue)
+  })
+})
+
+describe('pickCardForWord（本体先行）', () => {
+  const make = (id: number, type: string, state = 'new') => ({ card_id: id, card_type: type, state } as any)
+  it('全新词优先取认词卡', () => {
+    expect(pickCardForWord([make(1, 'spelling'), make(2, 'forward'), make(3, 'listening')]).card_id).toBe(2)
+  })
+  it('无认词卡时按 回忆>听音>拼写 顺位', () => {
+    expect(pickCardForWord([make(1, 'cloze'), make(2, 'listening')]).card_id).toBe(2)
+  })
+  it('有到期复习卡则复习优先', () => {
+    expect(pickCardForWord([make(1, 'forward'), make(2, 'spelling', 'review')]).card_id).toBe(2)
   })
 })

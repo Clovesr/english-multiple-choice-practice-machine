@@ -114,3 +114,30 @@ describe('挖空卡', () => {
     expect(wrapper.find('.cloze-blank').text()).toBe('resilience')
   })
 })
+
+describe('新词首照面教学模式（任何题型）', () => {
+  it('新的拼写卡不出输入框，直接展示本体与三键', async () => {
+    const wrapper = mountCard(makeCard({
+      card_type: 'spelling',
+      state: 'new',
+      prompt: { text: 'n. 恢复力' },
+      answer: { text: 'resilience', accept: ['resilience'] },
+    }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.spelling-input').exists()).toBe(false)
+    expect(wrapper.find('.study-word').text()).toBe('resilience')
+    expect(wrapper.text()).toContain('恢复力')
+    const labels = wrapper.findAll('.rating-bar button').map(b => b.text().replace(/\d/g, '').trim())
+    expect(labels).toEqual(['有点难', '记住了', '太简单，斩'])
+  })
+  it('重练副本恢复为正常测验形态', () => {
+    const wrapper = mount(StudyCardView, {
+      props: {
+        card: makeCard({ card_type: 'spelling', state: 'new', prompt: { text: 'n. 恢复力' }, answer: { accept: ['resilience'] } }),
+        speechAvailable: true,
+        drill: true,
+      },
+    })
+    expect(wrapper.find('.spelling-input').exists()).toBe(true)
+  })
+})
