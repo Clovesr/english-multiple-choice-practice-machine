@@ -631,7 +631,7 @@ h2, h3 { margin: 0; }
   .app-shell,.practice-shell { display:block; padding-bottom:74px; }
   .sidebar { position: fixed; inset: auto 0 0; width: 100%; height: 68px; padding: 8px 12px; border: 1px solid var(--line); border-width: 1px 0 0; display: block; background: color-mix(in srgb, var(--surface-solid) 94%, transparent); }
   .brand, .sidebar-note, .theme-button { display: none; }
-  .sidebar nav { height: 100%; display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 4px; }
+  .sidebar nav { height: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); gap: 4px; }
   .sidebar nav a { min-height:52px; padding:6px 3px; flex-direction:column; justify-content:center; gap:3px; border-radius:10px; font-size:9px; }
   .sidebar nav a:hover { transform:none; }
   .sidebar nav a.router-link-active { box-shadow:inset 0 -3px var(--primary); }
