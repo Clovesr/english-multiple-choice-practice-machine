@@ -5,6 +5,7 @@ import {
   type Rating,
   type StudyCard,
   isObjectiveCard,
+  isRecallReverse,
   judgeLocally,
   ratingFromKey,
   suggestedRating,
@@ -33,7 +34,8 @@ const typeLabels: Record<StudyCard['card_type'], string> = {
   forward: '认词', reverse: '辨义', listening: '听音', spelling: '拼写', cloze: '语境填词', collocation: '搭配',
 }
 
-const objective = computed(() => isObjectiveCard(props.card))
+const objective = computed(() => isObjectiveCard(props.card) && !isRecallReverse(props.card))
+const recallReverse = computed(() => isRecallReverse(props.card))
 const suggested = computed<Rating | null>(() =>
   objective.value && localCorrect.value !== null ? suggestedRating(localCorrect.value) : null)
 
@@ -146,7 +148,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
     <!-- 作答区 -->
     <section class="study-answer-zone">
-      <template v-if="card.card_type === 'reverse' || card.card_type === 'collocation'">
+      <template v-if="(card.card_type === 'reverse' && !recallReverse) || card.card_type === 'collocation'">
         <OptionList :options="options" :correct="[card.answer.text ?? '', ...(card.answer.accept ?? [])]" @answered="onOptionAnswered" />
       </template>
 

@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { GraduationCap, Loader2, PartyPopper } from 'lucide-vue-next'
+import { Flame, GraduationCap, Loader2, PartyPopper, Settings2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import type { ApiError } from '../api'
 import {
+  type CardType,
   type Rating,
   type StudyCard,
+  type StudyOverview,
   type StudySession,
-  gradeStudyCard,
+  type StudySettings,
+  getStudyOverview,
   getStudySession,
+  getStudySettings,
+  gradeStudyCard,
   newAttemptId,
+  putStudySettings,
   suspendStudyCard,
 } from '../services/study'
 import { getCapability } from '../services/speech'
 import StudyCardView from '../components/study/StudyCardView.vue'
 
 const session = ref<StudySession | null>(null)
+const overview = ref<StudyOverview | null>(null)
+const settings = ref<StudySettings | null>(null)
 const queue = ref<StudyCard[]>([])
 const loading = ref(true)
 const backendReady = ref(true)
@@ -22,22 +30,72 @@ const loadError = ref('')
 const speechAvailable = ref(false)
 const doneCount = ref(0)
 const grading = ref(false)
+const showSettings = ref(false)
+const savingSettings = ref(false)
+const lastFetchHadCards = ref(true)
 
 const current = computed(() => queue.value[0] ?? null)
 
-async function load() {
-  loading.value = true
+const cardTypeLabels: Record<CardType, string> = {
+  forward: '认词', reverse: '辨义', listening: '听音', spelling: '拼写', cloze: '挖空', collocation: '搭配',
+}
+
+async function loadOverview() {
+  try {
+    overview.value = await getStudyOverview()
+  } catch { /* overview 失败不阻塞学习 */ }
+}
+
+async function load(refetch = false) {
+  loading.value = !refetch
   loadError.value = ''
   try {
     session.value = await getStudySession(20)
     queue.value = [...session.value.cards]
+    lastFetchHadCards.value = queue.value.length > 0
+    void loadOverview()
   } catch (cause) {
     const error = cause as ApiError
-    if (error.status === 404 || error.status === 405) backendReady.value = false
+    if (error.status === 404 || error.status === 405 || error.code === 'endpoint_missing') backendReady.value = false
     else loadError.value = error.message || '学习会话加载失败'
   } finally {
     loading.value = false
   }
+}
+
+async function loadSettings() {
+  try {
+    settings.value = await getStudySettings()
+  } catch (cause) {
+    loadError.value = (cause as Error).message
+  }
+}
+
+async function toggleSettings() {
+  showSettings.value = !showSettings.value
+  if (showSettings.value && !settings.value) await loadSettings()
+}
+
+async function saveSettings() {
+  if (!settings.value) return
+  savingSettings.value = true
+  try {
+    settings.value = await putStudySettings(settings.value)
+    showSettings.value = false
+    await load(true) // 上限变化影响队列口径
+  } catch (cause) {
+    loadError.value = `设置保存失败：${(cause as Error).message}`
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+function toggleCardType(type: CardType) {
+  if (!settings.value) return
+  const list = settings.value.enabled_card_types
+  settings.value.enabled_card_types = list.includes(type)
+    ? list.filter((item) => item !== type)
+    : [...list, type]
 }
 
 async function onGrade(payload: { rating: Rating, answer_given?: string, duration_ms: number }) {
@@ -49,6 +107,8 @@ async function onGrade(payload: { rating: Rating, answer_given?: string, duratio
     queue.value = queue.value.slice(1)
     doneCount.value += 1
     if (session.value) session.value.counts.done_today += 1
+    if (!queue.value.length && lastFetchHadCards.value) await load(true) // 增量补池
+    else if (doneCount.value % 5 === 0) void loadOverview()
   } catch (cause) {
     loadError.value = `评分保存失败：${(cause as Error).message}。这张卡留在队列里，可重试。`
   } finally {
@@ -62,10 +122,14 @@ async function onSkip() {
   try {
     await suspendStudyCard(card.card_id)
     queue.value = queue.value.slice(1)
+    if (!queue.value.length && lastFetchHadCards.value) await load(true)
   } catch {
-    // 暂停失败就只是移到队尾，不打断学习
     queue.value = [...queue.value.slice(1), card]
   }
+}
+
+function percent(done: number, target: number): number {
+  return target > 0 ? Math.min(100, Math.round((done / target) * 100)) : 0
 }
 
 onMounted(async () => {
@@ -84,21 +148,62 @@ onMounted(async () => {
           待复习 {{ session.counts.due_remaining }} · 新卡 {{ session.counts.new_remaining }} · 今日已完成 {{ session.counts.done_today }}
         </p>
       </div>
-      <RouterLink class="button secondary compact" to="/wordbooks"><GraduationCap :size="16" />词书与计划</RouterLink>
+      <div style="display:flex;gap:8px">
+        <button class="button ghost compact" type="button" aria-label="学习设置" @click="toggleSettings"><Settings2 :size="16" /></button>
+        <RouterLink class="button secondary compact" to="/wordbooks"><GraduationCap :size="16" />词书与计划</RouterLink>
+      </div>
     </div>
+
+    <div v-if="overview && backendReady" class="card overview-strip">
+      <div class="ov-item">
+        <small>今日新学</small>
+        <strong>{{ overview.today.new_done }}/{{ overview.today.new_target }}</strong>
+        <div class="ov-bar"><div :style="`width:${percent(overview.today.new_done, overview.today.new_target)}%`" /></div>
+      </div>
+      <div class="ov-item"><small>今日复习</small><strong>{{ overview.today.reviews_done }}</strong></div>
+      <div class="ov-item"><small>逾期积压</small><strong :style="overview.overdue_total > 0 ? 'color:var(--danger)' : ''">{{ overview.overdue_total }}</strong></div>
+      <div class="ov-item"><small>连续天数</small><strong><Flame :size="14" style="color:var(--primary);vertical-align:-2px" /> {{ overview.streak_days }}</strong></div>
+      <div class="ov-item"><small>30日保持率</small><strong>{{ overview.retention_30d === null ? '—' : Math.round(overview.retention_30d * 100) + '%' }}</strong></div>
+      <div class="ov-item" v-if="overview.leeches"><small>顽固卡</small><strong style="color:var(--danger)">{{ overview.leeches }}</strong></div>
+    </div>
+
+    <section v-if="showSettings && settings" class="card" style="margin-bottom:16px;display:grid;gap:14px">
+      <strong>学习设置</strong>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div class="field" style="margin:0"><label>每日新卡上限</label>
+          <input v-model.number="settings.daily_new" type="number" min="0" max="500" style="width:110px" /></div>
+        <div class="field" style="margin:0"><label>每日复习上限</label>
+          <input v-model.number="settings.daily_review_max" type="number" min="0" max="2000" style="width:110px" /></div>
+      </div>
+      <div>
+        <label style="font-size:13px;color:var(--muted)">启用的卡片类型</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button
+            v-for="(label, type) in cardTypeLabels" :key="type" type="button" class="pill"
+            :style="settings.enabled_card_types.includes(type as CardType) ? 'outline:2px solid var(--primary)' : 'opacity:.5'"
+            @click="toggleCardType(type as CardType)"
+          >{{ label }}</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="button compact" type="button" :disabled="savingSettings" @click="saveSettings">
+          <Loader2 v-if="savingSettings" :size="14" class="spinning" /><span v-else>保存并刷新队列</span>
+        </button>
+        <button class="button ghost compact" type="button" @click="showSettings = false">收起</button>
+      </div>
+    </section>
 
     <div v-if="loading" class="card empty"><Loader2 :size="20" class="spinning" /><p>正在准备学习队列…</p></div>
 
     <div v-else-if="!backendReady" class="card empty">
-      <strong>学习会话接口还在开发中</strong>
-      <p>后端 /api/study/session 尚未上线（Codex Issue #2 进行中）。上线后这里会出现你的每日新词与到期复习队列。</p>
-      <p style="font-size:12px">在此之前可以先去资源库阅读并收藏生词。</p>
-      <RouterLink class="button secondary" to="/resources">去资源库</RouterLink>
+      <strong>学习会话接口不可用</strong>
+      <p>当前后端版本没有 /api/study/session。请确认应用已更新到含学习内核的版本后重试。</p>
+      <RouterLink class="button secondary" to="/resources">先去资源库</RouterLink>
     </div>
 
     <div v-else-if="loadError" class="warning">
       {{ loadError }}
-      <button class="button ghost compact" type="button" @click="load">重试</button>
+      <button class="button ghost compact" type="button" @click="load()">重试</button>
     </div>
 
     <template v-else-if="current">
@@ -117,3 +222,12 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.overview-strip { display: flex; gap: 26px; flex-wrap: wrap; padding: 16px 22px; margin-bottom: 16px; }
+.ov-item { display: grid; gap: 3px; min-width: 74px; }
+.ov-item small { color: var(--muted); font-size: 11px; }
+.ov-item strong { font-size: 17px; }
+.ov-bar { height: 4px; width: 74px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ov-bar div { height: 100%; background: var(--primary); }
+</style>
