@@ -833,37 +833,71 @@ def grade_card(
 
         now = _utc_now()
         before = dict(row)
-        scheduled = schedule_review(
-            before,
-            rating=rating,
-            reviewed_at=now,
-            duration_ms=duration_ms,
-        )
-        connection.execute(
+        day_start, day_end, _ = _local_day_bounds(now)
+        already_scheduled_today = connection.execute(
             """
-            UPDATE review_items
-            SET state = ?, step = ?, due_at = ?, last_review_at = ?,
-                stability = ?, difficulty = ?, scheduled_days = ?, elapsed_days = ?,
-                reps = ?, lapses = ?, scheduler = ?, scheduler_version = ?, updated_at = ?
-            WHERE id = ?
+            SELECT 1
+            FROM review_logs AS prior_log
+            JOIN vocabulary_cards AS prior_card ON prior_card.id = prior_log.card_id
+            WHERE prior_card.entry_id = ?
+              AND prior_log.reviewed_at >= ? AND prior_log.reviewed_at < ?
+            LIMIT 1
             """,
-            (
-                scheduled["state"],
-                scheduled["step"],
-                scheduled["due_at"],
-                scheduled["last_review_at"],
-                scheduled["stability"],
-                scheduled["difficulty"],
-                scheduled["scheduled_days"],
-                scheduled["elapsed_days"],
-                scheduled["reps"],
-                scheduled["lapses"],
-                scheduled["scheduler"],
-                scheduled["scheduler_version"],
-                scheduled["updated_at"],
-                row["id"],
-            ),
-        )
+            (row["entry_id"], _iso(day_start), _iso(day_end)),
+        ).fetchone() is not None
+        if already_scheduled_today:
+            # Same-day drills are valuable evidence, but only the first rating
+            # may move the long-term schedule. Persist a no-op log so retries
+            # remain idempotent and the attempted card type stays auditable.
+            scheduled = {
+                "state": str(row["state"]),
+                "step": int(row["step"]),
+                "due_at": str(row["due_at"]),
+                "last_review_at": row["last_review_at"],
+                "stability": float(row["stability"]),
+                "difficulty": float(row["difficulty"]),
+                "scheduled_days": float(row["scheduled_days"]),
+                "elapsed_days": float(row["elapsed_days"]),
+                "reps": int(row["reps"]),
+                "lapses": int(row["lapses"]),
+                "scheduler": str(row["scheduler"]),
+                "scheduler_version": str(row["scheduler_version"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            schedule_applied = False
+        else:
+            scheduled = schedule_review(
+                before,
+                rating=rating,
+                reviewed_at=now,
+                duration_ms=duration_ms,
+            )
+            schedule_applied = True
+            connection.execute(
+                """
+                UPDATE review_items
+                SET state = ?, step = ?, due_at = ?, last_review_at = ?,
+                    stability = ?, difficulty = ?, scheduled_days = ?, elapsed_days = ?,
+                    reps = ?, lapses = ?, scheduler = ?, scheduler_version = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    scheduled["state"],
+                    scheduled["step"],
+                    scheduled["due_at"],
+                    scheduled["last_review_at"],
+                    scheduled["stability"],
+                    scheduled["difficulty"],
+                    scheduled["scheduled_days"],
+                    scheduled["elapsed_days"],
+                    scheduled["reps"],
+                    scheduled["lapses"],
+                    scheduled["scheduler"],
+                    scheduled["scheduler_version"],
+                    scheduled["updated_at"],
+                    row["id"],
+                ),
+            )
         log_cursor = connection.execute(
             """
             INSERT INTO review_logs(
@@ -919,23 +953,24 @@ def grade_card(
             """,
             (_iso(now),),
         )
-        connection.execute(
-            """
-            UPDATE vocabulary_entries
-            SET next_review_at = ?, last_reviewed_at = ?,
-                study_status = CASE
-                    WHEN study_status IN ('known','ignored','paused') THEN study_status
-                    ELSE 'learning' END,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                scheduled["due_at"],
-                scheduled["last_review_at"],
-                scheduled["updated_at"],
-                row["entry_id"],
-            ),
-        )
+        if schedule_applied:
+            connection.execute(
+                """
+                UPDATE vocabulary_entries
+                SET next_review_at = ?, last_reviewed_at = ?,
+                    study_status = CASE
+                        WHEN study_status IN ('known','ignored','paused') THEN study_status
+                        ELSE 'learning' END,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    scheduled["due_at"],
+                    scheduled["last_review_at"],
+                    scheduled["updated_at"],
+                    row["entry_id"],
+                ),
+            )
         record_learning_event(
             connection,
             verb="review",
@@ -949,6 +984,7 @@ def grade_card(
                 "new_word": row["state"] == "new",
                 "rating": rating,
                 "review_item_id": int(row["id"]),
+                "schedule_applied": schedule_applied,
             },
             duration_ms=duration_ms,
             occurred_at=_iso(now),

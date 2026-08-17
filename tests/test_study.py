@@ -311,6 +311,7 @@ class StudyApiTests(unittest.TestCase):
         result = grade.json()
         self.assertIsNone(result["auto_correct"])
         self.assertEqual(result["attempt_id"], attempt_id)
+        self.assertEqual(result["review_item"]["reps"], 1)
         due = datetime.fromisoformat(result["next_due_at"])
         self.assertIsNotNone(due.tzinfo)
         self.assertLess(due - datetime.now(timezone.utc), timedelta(hours=1))
@@ -360,6 +361,8 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(objective.status_code, 200, objective.text)
         self.assertFalse(objective.json()["auto_correct"])
         self.assertEqual(objective.json()["final_rating"], 4)
+        self.assertEqual(objective.json()["next_due_at"], result["next_due_at"])
+        self.assertEqual(objective.json()["review_item"]["reps"], 1)
 
         with connect() as connection:
             listening_id = int(
@@ -403,6 +406,8 @@ class StudyApiTests(unittest.TestCase):
             self.assertEqual(log["auto_correct"], 0)
             self.assertEqual(log["auto_rating"], 1)
             self.assertEqual(log["final_rating"], 4)
+            self.assertEqual(log["state_before"], log["state_after"])
+            self.assertEqual(log["due_before"], log["due_after"])
         finally:
             connection.close()
 
@@ -483,6 +488,7 @@ class StudyApiTests(unittest.TestCase):
     def test_due_priority_easy_interval_daily_cap_and_leech_overview(self) -> None:
         collected = self._collect()
         entry_id = int(collected["entry"]["id"])
+        new_entry_id = int(self._collect("colour")["entry"]["id"])
         settings = self.client.put(
             "/api/study/settings",
             json={"daily_new": 1, "daily_review_max": 1, "leech_threshold": 1},
@@ -522,9 +528,11 @@ class StudyApiTests(unittest.TestCase):
             connection.close()
 
         session = self.client.get("/api/study/session", params={"limit": 10}).json()
-        self.assertEqual(len(session["cards"]), 1)
+        self.assertEqual(len(session["cards"]), 2)
         self.assertEqual(session["cards"][0]["card_id"], due_card["id"])
         self.assertEqual(session["cards"][0]["card_type"], "spelling")
+        self.assertEqual(session["cards"][1]["entry_id"], new_entry_id)
+        self.assertEqual(session["cards"][1]["card_type"], "forward")
         grade = self.client.post(
             f"/api/study/cards/{due_card['id']}/grade",
             json={
