@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import io
 import json
 import re
 import sqlite3
@@ -10,8 +11,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from docx import Document
+from pypdf import PdfReader
+
 from .. import database as database_module
 from ..database import new_trash_batch
+from .learning import record_learning_event
 
 
 MAX_RESOURCE_BYTES = 20 * 1024 * 1024
@@ -115,6 +120,82 @@ def _markdown_segments(text: str) -> list[dict[str, Any]]:
     return segments
 
 
+def _pdf_segments(raw: bytes) -> list[dict[str, Any]]:
+    try:
+        reader = PdfReader(io.BytesIO(raw), strict=False)
+        if reader.is_encrypted:
+            try:
+                decrypted = reader.decrypt("")
+            except Exception as error:
+                raise ResourceError("PDF 已加密，无法读取文本") from error
+            if decrypted == 0:
+                raise ResourceError("PDF 已加密，无法读取文本")
+        segments: list[dict[str, Any]] = []
+        extracted_characters = 0
+        for page_number, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").replace("\r\n", "\n").replace("\r", "\n")
+            extracted_characters += len(text.strip())
+            for block in re.split(r"\n\s*\n", text):
+                content = "\n".join(
+                    line.strip() for line in block.splitlines() if line.strip()
+                ).strip()
+                if content:
+                    segments.append(
+                        {
+                            "kind": "paragraph",
+                            "heading_level": 0,
+                            "content": content,
+                            "metadata": {"page": page_number},
+                        }
+                    )
+    except ResourceError:
+        raise
+    except Exception as error:
+        raise ResourceError(f"PDF 解析失败：{error}") from error
+    if extracted_characters < 20 or not segments:
+        raise ResourceError("PDF 没有可提取的文本层，可能是扫描版；V1 不提供 OCR")
+    return segments
+
+
+def _docx_segments(raw: bytes) -> list[dict[str, Any]]:
+    try:
+        document = Document(io.BytesIO(raw))
+    except Exception as error:
+        raise ResourceError(f"DOCX 解析失败：{error}") from error
+    segments: list[dict[str, Any]] = []
+    for paragraph in document.paragraphs:
+        content = paragraph.text.strip()
+        if not content:
+            continue
+        style_name = str(paragraph.style.name or "") if paragraph.style else ""
+        heading = re.search(r"(?:Heading|标题)\s*([1-6])", style_name, re.IGNORECASE)
+        level = int(heading.group(1)) if heading else 0
+        segments.append(
+            {
+                "kind": "heading" if level else "paragraph",
+                "heading_level": level,
+                "content": content,
+                "metadata": {"style": style_name},
+            }
+        )
+    for table_index, table in enumerate(document.tables, start=1):
+        for row_index, row in enumerate(table.rows, start=1):
+            cells = [" ".join(cell.text.strip().split()) for cell in row.cells]
+            content = " | ".join(cell for cell in cells if cell)
+            if content:
+                segments.append(
+                    {
+                        "kind": "paragraph",
+                        "heading_level": 0,
+                        "content": content,
+                        "metadata": {"table": table_index, "row": row_index},
+                    }
+                )
+    if not segments:
+        raise ResourceError("DOCX 中没有可导入的文本内容")
+    return segments
+
+
 def _resource_payload(row: sqlite3.Row) -> dict[str, Any]:
     payload = dict(row)
     payload.pop("stored_path", None)
@@ -170,8 +251,8 @@ def create_resource(
     safe_filename = Path(filename or "resource.txt").name
     suffix = Path(safe_filename).suffix.lower()
     resource_format = requested_format.lower().strip() or suffix.lstrip(".")
-    if resource_format not in {"txt", "md"}:
-        raise ResourceError("V1 仅支持 TXT 和 Markdown 资源")
+    if resource_format not in {"txt", "md", "pdf", "docx"}:
+        raise ResourceError("V1 支持 TXT、Markdown、PDF 和 DOCX 资源")
     checksum = hashlib.sha256(raw).hexdigest()
     duplicate = connection.execute(
         "SELECT id FROM resources WHERE checksum = ? AND deleted_at IS NULL",
@@ -184,15 +265,22 @@ def create_resource(
     encoding = ""
     segments: list[dict[str, Any]] = []
     try:
-        text, encoding = _decode_text(raw)
-        segments = (
-            _markdown_segments(text) if resource_format == "md" else _plain_segments(text)
-        )
+        if resource_format == "pdf":
+            segments = _pdf_segments(raw)
+        elif resource_format == "docx":
+            segments = _docx_segments(raw)
+        else:
+            text, encoding = _decode_text(raw)
+            segments = (
+                _markdown_segments(text)
+                if resource_format == "md"
+                else _plain_segments(text)
+            )
     except ResourceError as error:
         parse_error = str(error)
 
     resource_uuid = str(uuid4())
-    extension = ".md" if resource_format == "md" else ".txt"
+    extension = f".{resource_format}"
     folder = _storage_root() / resource_uuid
     folder.mkdir(parents=False, exist_ok=False)
     original_path = folder / f"original{extension}"
@@ -221,10 +309,19 @@ def create_resource(
                 checksum,
                 safe_filename,
                 original_path.relative_to(Path(database_module.DATABASE_PATH).parent).as_posix(),
-                "text/markdown" if resource_format == "md" else "text/plain",
+                {
+                    "md": "text/markdown",
+                    "txt": "text/plain",
+                    "pdf": "application/pdf",
+                    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                }[resource_format],
                 len(raw),
                 len(segments),
-                f"builtin-{resource_format}:{encoding}" if encoding else "builtin-text",
+                (
+                    f"builtin-{resource_format}:{encoding}"
+                    if encoding
+                    else f"builtin-{resource_format}"
+                ),
                 parse_error,
                 now,
                 now,
@@ -237,7 +334,7 @@ def create_resource(
                 """
                 INSERT INTO resource_segments(
                     resource_id, sequence, kind, heading_level, content, metadata
-                ) VALUES (?, ?, ?, ?, ?, '{}')
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     resource_id,
@@ -245,8 +342,26 @@ def create_resource(
                     segment["kind"],
                     segment["heading_level"],
                     segment["content"],
+                    json.dumps(
+                        segment.get("metadata") or {},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                 ),
             )
+        record_learning_event(
+            connection,
+            verb="import",
+            object_type="resource",
+            object_id=resource_id,
+            result={
+                "format": resource_format,
+                "segment_count": len(segments),
+                "status": "needs_review" if parse_error else "inbox",
+            },
+            occurred_at=now,
+        )
         connection.commit()
     except Exception:
         connection.rollback()
@@ -398,6 +513,19 @@ def save_progress(
         """,
         (resource_id, last_segment_id, scroll_ratio, reading_ms_delta, now, now),
     )
+    if reading_ms_delta:
+        record_learning_event(
+            connection,
+            verb="read",
+            object_type="resource",
+            object_id=resource_id,
+            result={
+                "last_segment_id": last_segment_id,
+                "scroll_ratio": scroll_ratio,
+            },
+            duration_ms=reading_ms_delta,
+            occurred_at=now,
+        )
     connection.commit()
     return get_resource(connection, resource_id)["progress"]
 

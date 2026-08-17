@@ -10,6 +10,9 @@ from ..database import get_active_profile_id
 from ..schemas import PracticeCreate
 from .questions import parse_json, serialize_unit
 from .listening import listening_unit_has_audio_sql
+from .learning import record_learning_event
+from .review import ensure_wrong_question_item
+from .skills import update_mastery_for_question
 
 
 class IncompleteSubmissionError(ValueError):
@@ -527,6 +530,35 @@ def _grade_answer_rows(
         )
         if not already_graded:
             _update_wrong_stat(connection, row["question_id"], is_correct)
+            record_learning_event(
+                connection,
+                verb="answer",
+                object_type="question",
+                object_id=int(row["question_id"]),
+                result={
+                    "correct": is_correct,
+                    "session_id": int(row["session_id"]),
+                    "user_answer": str(row["user_answer"]),
+                },
+            )
+            update_mastery_for_question(
+                connection,
+                int(row["question_id"]),
+                correct=is_correct,
+            )
+            if not is_correct:
+                existing_item = connection.execute(
+                    """
+                    SELECT 1 FROM review_items
+                    WHERE item_type = 'wrong_question' AND ref_id = ?
+                    """,
+                    (row["question_id"],),
+                ).fetchone()
+                ensure_wrong_question_item(
+                    connection,
+                    int(row["question_id"]),
+                    repeated_wrong=existing_item is not None,
+                )
     return score, max_score
 
 

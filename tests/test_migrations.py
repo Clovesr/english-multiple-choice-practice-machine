@@ -49,6 +49,9 @@ class VersionedMigrationTests(unittest.TestCase):
                 [
                     (1, "resources_and_search"),
                     (2, "vocabulary_cards_and_fsrs"),
+                    (3, "courses_and_skills"),
+                    (4, "tasks_events_and_mastery"),
+                    (5, "backup_catalog"),
                 ],
             )
             self.assertTrue(all(len(row["checksum"]) == 64 for row in migrations))
@@ -117,7 +120,7 @@ class VersionedMigrationTests(unittest.TestCase):
         with connect() as connection:
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                2,
+                5,
             )
             self.assertEqual(pending_migrations(connection, MIGRATIONS), ())
 
@@ -319,7 +322,7 @@ class VersionedMigrationTests(unittest.TestCase):
         self.assertIsNone(connection.row_factory)
         self.assertEqual(
             connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-            2,
+            5,
         )
         connection.close()
 

@@ -717,6 +717,12 @@ def _run_migrations(connection: sqlite3.Connection) -> None:
 
 def initialize_database() -> None:
     ensure_directories()
+    # A restore spans SQLite plus user asset directories. Resolve any durable
+    # restore journal before migrations or startup services can observe a
+    # half-swapped state after a power loss / forced process kill.
+    from .services.backups import recover_interrupted_restore
+
+    recover_interrupted_restore()
     database_path = Path(DATABASE_PATH)
     with connect() as connection:
         pending = pending_migrations(connection, MIGRATIONS)
