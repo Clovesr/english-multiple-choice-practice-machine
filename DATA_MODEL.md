@@ -16,7 +16,7 @@
 | 迁移 | 内容 | 里程碑 |
 |---|---|---|
 | 0001 | schema_migrations、WAL、resources、resource_segments、resource_progress、resource_segments_fts（FTS5）、vocabulary_occurrences 增列 | W1 |
-| 0002 | review_items、review_logs、词汇存量数据接入 FSRS（§4） | W1 |
+| 0002 | 结构化词汇、词书/计划、六类卡片、学习会话、review_items/review_logs、词汇存量接入 FSRS（§4） | W1 |
 | 0003 | courses、lessons、skills、skill_dependencies、lesson_skills、question_skills | W1 定稿 / W2 使用 |
 | 0004 | daily_tasks、learning_events、mastery_states、metrics_daily | W2 |
 | 0005 | backup_catalog | W2 |
@@ -99,47 +99,204 @@ ALTER TABLE vocabulary_occurrences ADD COLUMN resource_id INTEGER REFERENCES res
 ALTER TABLE vocabulary_occurrences ADD COLUMN segment_id INTEGER REFERENCES resource_segments(id) ON DELETE SET NULL;
 ```
 
-### 0002 统一复习（FSRS）
+### 0002 词汇知识、卡片与统一复习（FSRS）
+
+旧 `vocabulary_entries` 保留原字段与语义，只纯增列：
+
+```sql
+ALTER TABLE vocabulary_entries ADD COLUMN uuid TEXT;
+ALTER TABLE vocabulary_entries ADD COLUMN dictionary_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE vocabulary_entries ADD COLUMN phonetic_uk TEXT NOT NULL DEFAULT '';
+ALTER TABLE vocabulary_entries ADD COLUMN phonetic_us TEXT NOT NULL DEFAULT '';
+ALTER TABLE vocabulary_entries ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE vocabulary_entries ADD COLUMN enrichment_status TEXT NOT NULL DEFAULT 'needs_enrichment';
+ALTER TABLE vocabulary_entries ADD COLUMN deleted_at TEXT;
+CREATE UNIQUE INDEX idx_vocabulary_entries_uuid
+    ON vocabulary_entries(uuid) WHERE uuid IS NOT NULL;
+```
+
+SQLite 不能用 `ALTER TABLE` 给存量表新增 `NOT NULL UNIQUE` 列，因此迁移先增 nullable
+`uuid`、同事务回填全部旧行并建 partial unique index；之后所有写入口必须写 UUID。物理约束与
+“旧表不重建”的兼容原则以此折中。`enrichment_status` 为 `ready | needs_enrichment | failed`，
+不得复用旧 `translation_status`（后者仍只描述可选模型翻译队列）。
+
+结构化词义、词形与关系：
+
+```sql
+CREATE TABLE vocabulary_senses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT NOT NULL UNIQUE,
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    pos TEXT NOT NULL DEFAULT '',
+    gloss_zh TEXT NOT NULL DEFAULT '',
+    gloss_en TEXT NOT NULL DEFAULT '',
+    sequence INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'user',
+    source_ref TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE (entry_id, source, source_ref, sequence)
+);
+CREATE TABLE vocabulary_forms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    form_type TEXT NOT NULL, form_text TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'user',
+    UNIQUE (entry_id, form_type, form_text)
+);
+CREATE TABLE vocabulary_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL,           -- family/synonym/antonym/similar/phrasal_verb/collocation
+    related_term TEXT NOT NULL,
+    related_entry_id INTEGER REFERENCES vocabulary_entries(id) ON DELETE SET NULL,
+    note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'user',
+    UNIQUE (entry_id, relation_type, related_term, source)
+);
+```
+
+自动导入不得覆盖 `source='user'` 的人工事实。旧摘要字段继续供兼容 UI 使用；新接口以子表为
+结构化事实来源。
+
+词书、计划和全局设置：
+
+```sql
+CREATE TABLE wordbooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL, kind TEXT NOT NULL, -- builtin | imported
+    source_tag TEXT NOT NULL DEFAULT '', source_name TEXT NOT NULL DEFAULT '',
+    source_version TEXT NOT NULL DEFAULT '', license TEXT NOT NULL DEFAULT '',
+    checksum TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE wordbook_entries (
+    wordbook_id INTEGER NOT NULL REFERENCES wordbooks(id) ON DELETE CASCADE,
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL DEFAULT 0, frequency_rank INTEGER,
+    added_at TEXT NOT NULL, PRIMARY KEY (wordbook_id, entry_id)
+);
+CREATE TABLE study_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE,
+    wordbook_id INTEGER NOT NULL REFERENCES wordbooks(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'normal',  -- normal | sprint
+    daily_new INTEGER NOT NULL DEFAULT 20,
+    new_order TEXT NOT NULL DEFAULT 'frequency', -- frequency | sequence | random
+    exam_date TEXT, active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX idx_study_plans_one_active ON study_plans(active) WHERE active = 1;
+CREATE TABLE study_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    daily_new INTEGER NOT NULL DEFAULT 20,
+    daily_review_max INTEGER NOT NULL DEFAULT 200,
+    enabled_card_types TEXT NOT NULL,     -- JSON：六类卡开关
+    new_card_order TEXT NOT NULL DEFAULT 'frequency',
+    leech_threshold INTEGER NOT NULL DEFAULT 8,
+    backlog_mode TEXT NOT NULL DEFAULT 'spread',
+    updated_at TEXT NOT NULL
+);
+```
+
+卡片是实际学习单元；同词、同卡型可有多个语境/搭配变体，每张卡独立调度：
+
+```sql
+CREATE TABLE vocabulary_cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE,
+    entry_id INTEGER NOT NULL REFERENCES vocabulary_entries(id) ON DELETE CASCADE,
+    card_type TEXT NOT NULL,              -- forward/reverse/listening/spelling/cloze/collocation
+    variant_key TEXT NOT NULL,
+    generation_source TEXT NOT NULL DEFAULT '',
+    prompt_data TEXT NOT NULL DEFAULT '{}', answer_data TEXT NOT NULL DEFAULT '{}',
+    content_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE (entry_id, card_type, variant_key)
+);
+```
+
+`prompt_data/answer_data` 是版本化快照，原始事实仍在词汇子表。仅在数据充分时生成卡片；
+词典外词可入库为 `needs_enrichment`，但不得产生空白 reverse/spelling/cloze/collocation 卡。
+人工暂停的唯一事实位放在对应 `review_items.manually_suspended`，避免卡片表与调度表双写漂移。
+
+统一复习状态与只追加日志：
 
 ```sql
 CREATE TABLE review_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uuid TEXT NOT NULL UNIQUE,
-    item_type TEXT NOT NULL,              -- vocabulary | wrong_question（V1 只有这两类；后续: sentence/grammar/dictation）
-    ref_id INTEGER NOT NULL,              -- vocabulary → vocabulary_entries.id；wrong_question → questions.id
+    item_type TEXT NOT NULL,              -- vocabulary_card | wrong_question（后续可扩展）
+    ref_id INTEGER NOT NULL,              -- vocabulary_card → vocabulary_cards.id
     state TEXT NOT NULL DEFAULT 'new',    -- new | learning | review | relearning
+    step INTEGER NOT NULL DEFAULT 0,
     due_at TEXT NOT NULL,
+    last_review_at TEXT,
     stability REAL NOT NULL DEFAULT 0,
     difficulty REAL NOT NULL DEFAULT 0,
+    scheduled_days REAL NOT NULL DEFAULT 0,
+    elapsed_days REAL NOT NULL DEFAULT 0,
     reps INTEGER NOT NULL DEFAULT 0,
     lapses INTEGER NOT NULL DEFAULT 0,
-    last_review_at TEXT,
-    suspended INTEGER NOT NULL DEFAULT 0,
+    manually_suspended INTEGER NOT NULL DEFAULT 0,
     scheduler TEXT NOT NULL DEFAULT 'fsrs',
-    scheduler_version TEXT NOT NULL,      -- py-fsrs 版本号
+    scheduler_version TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (item_type, ref_id)
 );
-CREATE INDEX idx_review_due ON review_items(suspended, due_at);
+CREATE INDEX idx_review_due ON review_items(manually_suspended, due_at);
 
 CREATE TABLE review_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT NOT NULL UNIQUE,
+    attempt_id TEXT NOT NULL UNIQUE,      -- 客户端 UUID；真正的写幂等键
     review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
-    rating INTEGER NOT NULL,              -- 1 Again | 2 Hard | 3 Good | 4 Easy
+    card_id INTEGER REFERENCES vocabulary_cards(id) ON DELETE SET NULL,
+    answer_given TEXT,
+    auto_correct INTEGER,                 -- NULL=主观卡；0/1=后端客观复判
+    auto_rating INTEGER,                  -- 后端建议 1 Again / 3 Good
+    final_rating INTEGER NOT NULL,        -- 用户最终 1 Again | 2 Hard | 3 Good | 4 Easy
     state_before TEXT NOT NULL,
+    state_after TEXT NOT NULL,
+    step_before INTEGER NOT NULL,
+    step_after INTEGER NOT NULL,
     due_before TEXT NOT NULL,
     due_after TEXT NOT NULL,
+    stability_before REAL NOT NULL,
     stability_after REAL NOT NULL,
+    difficulty_before REAL NOT NULL,
     difficulty_after REAL NOT NULL,
     elapsed_days REAL NOT NULL DEFAULT 0,
+    scheduled_days REAL NOT NULL DEFAULT 0,
     duration_ms INTEGER NOT NULL DEFAULT 0,
     reviewed_at TEXT NOT NULL
 );
 CREATE INDEX idx_review_logs_item ON review_logs(review_item_id, reviewed_at);
 ```
 
-FSRS 引擎：**py-fsrs（MIT）**，默认参数起步；`review_logs` 保全量历史，未来参数优化可重算，不覆写历史（规划书 C.3）。
+`review_items.ref_id` 是多态关联，SQLite 无法直接声明到两张目标表的外键；迁移创建
+`vocabulary_cards_review_item_delete` 触发器，在卡片被物理删除时同步删除其复习项，
+`review_logs` 再通过外键级联删除，避免旧词条硬删除留下孤儿调度数据。
+
+FSRS 引擎使用 **py-fsrs（MIT）**默认参数起步；`review_logs` 保全量前后状态，未来参数
+升级可从日志重算，不覆写历史。客观卡的 `answer.accept` 由后端统一展开；后端复判结果、
+自动建议评分和用户最终评分同时入日志。
+
+学习会话需要持久化选中的卡，保证同一 `session_id` 刷新后批次与每日上限口径不变：
+
+```sql
+CREATE TABLE study_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE,
+    plan_id INTEGER REFERENCES study_plans(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    card_limit INTEGER NOT NULL, new_quota INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL, last_accessed_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE TABLE study_session_cards (
+    session_id INTEGER NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
+    card_id INTEGER NOT NULL REFERENCES vocabulary_cards(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL, bucket TEXT NOT NULL, -- due | new
+    status TEXT NOT NULL DEFAULT 'pending', graded_at TEXT,
+    PRIMARY KEY (session_id, card_id), UNIQUE (session_id, sequence)
+);
+```
 
 ### 0003 课程与知识点（W1 建表，W2 接入 UI）
 
@@ -255,11 +412,15 @@ CREATE TABLE backup_catalog (
 
 ## 4. 存量词汇接入 FSRS（迁移 0002 数据部分）
 
-1. 为每个未删除 `vocabulary_entries` 建一条 `review_items(item_type='vocabulary', ref_id=entry.id)`。
-2. 旧 `next_review_at` / `last_reviewed_at` 是**本地 naive 时间**：按迁移执行机的本地时区换算成 UTC 后写入。
-3. 初始状态映射：有 `last_reviewed_at` → `state='review'`，`due_at=`换算后的 next_review_at（已过期则为迁移时刻）；从未复习 → `state='new'`，`due_at=` 迁移时刻。stability/difficulty 用 FSRS 默认初始化，首次评分后由算法正式接管（近似值，可接受，写入迁移说明）。
-4. `vocabulary_reviews` 旧历史**只读保留**，不迁入 review_logs；新复习一律写 review_logs。
-5. 旧接口 `POST /api/vocabulary/{id}/review` 保持可用：评分映射 again→1、hard→2、mastered→4，内部走 FSRS（见 API_CONTRACT.md §6）。
+1. 给所有旧词条回填 UUID、结构化词义/lemma/关系事实；旧 `phonetic` 只在新字段为空时复制到 `phonetic_uk`，原字段不清空。
+2. 为每个未删除旧词条至少生成一张 `forward/primary` 卡，再建
+   `review_items(item_type='vocabulary_card', ref_id=card.id)`；不得直接把复习项指向词条。
+3. 旧 `next_review_at` / `last_reviewed_at` 是**本地 naive 时间**：按迁移执行机的本地时区换算成 UTC；若原值有效，即使已过期也保留换算后的精确时刻，缺失或损坏才回退迁移时刻。
+4. 有有效 `last_reviewed_at` → `state='review'`；从未复习 → `state='new'`、`due_at=` 迁移时刻。旧 interval 只能近似初始化 stability/difficulty，评分后由正式 FSRS 接管，`scheduler_version='legacy-bootstrap-v1'` 明示来源。
+5. `vocabulary_reviews` 旧历史**逐行只读保留**，不伪造 attempt_id、不迁入 review_logs；新复习一律写 review_logs。
+6. 迁移可重复启动：不得产生重复卡片、review_items 或结构化事实。旧接口
+   `POST /api/vocabulary/{id}/review` 保持可用，定位/补建正向卡后映射
+   again→1、hard→2、mastered→4，内部走同一 FSRS 评分核心。
 
 ## 5. 存量错题接入复习中心（W2，迁移 0004 之后的服务逻辑）
 
