@@ -32,26 +32,57 @@
 3. 空资源（0 段落，needs_review）打开 → 给出"解析失败原因 + 重新导入"引导，不崩。
 
 ### A4 选词收藏
-1. 阅读器中选中一个词收藏 → 词条创建，语境句、resource_id、segment_id 正确。
+1. 阅读器中选中一个词收藏 → 词条创建，语境句、resource_id、segment_id 正确；词典可查到时音标词义自动补全（enriched_from_dictionary=true）。
 2. 同一个词在第二篇资源再次收藏 → 合并到同一词条，encounter_count+1，两条语境都在，词条详情能跳回两处原文。
-3. 收藏即出现在复习队列（state=new）。
+3. 收藏后按数据充分性生成卡片（至少正向卡；语境齐备含挖空卡），出现在学习会话新卡队列。
 
-### A5 FSRS 复习闭环
-1. /review 队列出现到期与新卡，四键评分（Again/Hard/Good/Easy）后卡片离队，next_due_at 合理（Again 为分钟级，Easy 为多天）。
-2. 评分写入 review_logs：state/due/stability/difficulty 前后值完整。
-3. 同一卡 60 秒内重复评分（模拟前端重试）→ 不产生第二条 log。
-4. 暂停卡片不再出现在队列；恢复后回来。
-5. G1：评分后重启，队列计数与 due 时间不变。
+### A5 学习会话与 FSRS 评分闭环
+1. /study 会话混合到期卡与新卡（daily_new 上限内），四键评分（Again/Hard/Good/Easy）后卡片离队，next_due_at 合理（Again 为分钟级，Easy 为多天）。
+2. 评分写入 review_logs：state/step/due/stability/difficulty 前后值完整，attempt_id、auto_correct 与 final_rating 记录在案。
+3. 同一 attempt_id 重发（模拟前端重试）→ 返回首次结果，不产生第二条 log。
+4. 暂停某张卡不再出队；**同词条其他类型卡不受影响**；恢复后回来。
+5. 同一 session_id 内刷新页面 → 同一批卡与上限口径不变。
+6. G1：评分后重启，队列计数与 due 时间不变。
 
 ### A6 存量词汇迁移
 1. 用真实旧库（test-fixtures/existing-user-database.sqlite）启动 → 迁移自动执行，迁移前快照出现在 backups/pre-migration/。
-2. 每个旧词条都有 review_item；已复习过的词 due_at 与旧 next_review_at 换算一致（本地→UTC）。
-3. vocabulary_reviews 旧历史原样保留。
-4. 旧接口 POST /api/vocabulary/{id}/review 仍工作（映射到 FSRS）。
-5. 对同一旧库重复启动 → 迁移不重复执行，无重复 review_items。
+2. 每个旧词条至少生成正向卡并接入 FSRS；已复习过的词其正向卡 due_at 与旧 next_review_at 换算一致（本地→UTC）。
+3. vocabulary_reviews 旧历史原样保留；旧 phonetic/释义字段不被清空。
+4. 旧接口 POST /api/vocabulary/{id}/review 仍工作（评分落在正向卡上）。
+5. 对同一旧库重复启动 → 迁移不重复执行，无重复卡片与 review_items。
 
 ### A7 W1 端到端（用户亲验）
-导入一篇真实英语文章 → 阅读并收藏 3 个词 → /review 完成含这 3 词的复习 → 重启 → 全部状态保持。全程断网可完成。
+导入一篇真实英语文章 → 阅读并收藏 3 个词 → /study 完成含这 3 词的学习 → 重启 → 全部状态保持。全程断网可完成。
+
+### A8 词书与词典（十条之 1/2/9）
+1. 全新环境断网启动 → 内置词书（CET4/CET6/考研）可见且可激活，无需联网或手动下载。
+2. 激活词书（daily_new=10）→ /study 出现该词书新卡，词条含音标、词性、中文释义。
+3. 导入自定义词表（含 3 个词典外生造词）→ 匹配报告正确；未匹配词标记 needs_enrichment，仅生成数据充分的卡片，无空白卡。
+4. /api/dictionary/lookup 断网可查；阅读器选词浮层同源出数据。
+5. 切换激活词书 → 原词书已生成卡片与进度保留。
+
+### A9 六类卡片（十条之 3/5）
+1. 六类卡各完成一次作答：正向（自评）、反向（选择题后端判分）、听音（播放后认词）、拼写（输入判定）、挖空（语境填词）、搭配（配对/补全）。
+2. 数据不足的词不出现对应类型卡（无语境无挖空卡、无搭配数据无搭配卡）。
+3. 搭配卡内容只来自显式来源（短语词书条目/relations/用户收藏短语），普通词不自动生成。
+4. 设置中停用某类卡 → 该类型全部离队；重新启用恢复调度。
+5. 词条标记"已知/忽略" → 其全部卡片离队；标记回"学习中" → 用户单独暂停过的卡仍保持暂停。
+
+### A10 判分与发音（十条之 5/9）
+1. 拼写卡：前端即时反馈与后端复判一致；大小写、首尾空格、美英变体（colour/color）按 accept 列表容错。
+2. 客观卡自动评分默认 错→Again、对→Good；用户改评后日志同时保留 auto_correct 与 final_rating。
+3. 断网环境听音卡真实发声（本地 voice 检测通过或后端 Provider 兜底）；设置页显示当前发音能力状态。
+4. 无任何可用语音时：听音卡显示明确降级提示且可跳过，不阻塞会话。
+
+### A11 每日计划、积压与冲刺（十条之 7/8）
+1. daily_new 与 daily_review_max 生效；达到上限后会话不再放新卡。
+2. 构造 50 张逾期卡 → overview 显示积压；执行 backlog 三种模式各自行为正确（分摊/暂停新卡/只清逾期）。
+3. 冲刺：设考试日期 → 预览每日需求量与可行性提示 → 激活后 daily_new 按计划调整 → 退出冲刺恢复常规。
+4. overview 的今日数字与 review_logs 逐项可对账。
+
+### A12 顽固卡（十条之 6）
+1. 同一张卡 lapses 达到 leech_threshold → 标记顽固卡，overview 计数出现，卡片界面给出建议（暂停/重学）。
+2. 顽固卡暂停后不再入队，词条其他卡不受影响。
 
 ## W2 场景
 
