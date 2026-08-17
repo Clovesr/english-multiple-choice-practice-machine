@@ -9,6 +9,8 @@ from ..database import get_db
 from ..schemas import (
     VocabularyCreate,
     VocabularyReview,
+    VocabularySelectionCreate,
+    VocabularyStateUpdate,
     VocabularyTranslationRunRequest,
     VocabularyUpdate,
 )
@@ -20,9 +22,38 @@ from ..services.vocabulary import (
     review_entry,
     translate_queued_vocabulary,
 )
+from ..services.vocabulary_learning import collect_from_selection
+from ..services.wordbooks import update_entry_state
 
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
+
+
+@router.post("/from-selection", status_code=201)
+def create_from_selection(
+    request: VocabularySelectionCreate,
+    connection: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    try:
+        return collect_from_selection(connection, request.model_dump())
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@router.put("/entries/{entry_id}/state")
+def set_entry_state(
+    entry_id: int,
+    request: VocabularyStateUpdate,
+    connection: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    try:
+        return update_entry_state(connection, entry_id, request.study_status)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @router.post("")
