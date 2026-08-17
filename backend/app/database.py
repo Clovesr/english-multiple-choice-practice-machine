@@ -3,9 +3,11 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from .config import DATABASE_PATH, ensure_directories
+from .migrations import MIGRATIONS, backup_database, pending_migrations, run_pending_migrations
 
 
 SCHEMA = """
@@ -714,9 +716,37 @@ def _run_migrations(connection: sqlite3.Connection) -> None:
 
 
 def initialize_database() -> None:
+    ensure_directories()
+    database_path = Path(DATABASE_PATH)
     with connect() as connection:
+        pending = pending_migrations(connection, MIGRATIONS)
+        database_exists = database_path.exists() and database_path.stat().st_size > 0
+        backup_created = False
+        if pending and database_exists:
+            current_version = 0
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone():
+                row = connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                ).fetchone()
+                current_version = int(row[0]) if row else 0
+            backup_database(
+                connection,
+                database_path,
+                from_version=current_version,
+                to_version=pending[-1].version,
+            )
+            backup_created = True
         connection.executescript(SCHEMA)
         _run_migrations(connection)
+        connection.commit()
+        run_pending_migrations(
+            connection,
+            database_path,
+            MIGRATIONS,
+            create_backup=not backup_created and database_exists,
+        )
 
 
 def get_default_profile_id(connection: sqlite3.Connection) -> int:
