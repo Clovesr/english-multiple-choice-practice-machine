@@ -184,10 +184,16 @@ class VocabularyLearningApiTests(unittest.TestCase):
                 INSERT INTO review_items(
                     uuid, item_type, ref_id, state, due_at, reps,
                     scheduler_version, created_at, updated_at
-                ) VALUES (?, 'vocabulary_card', ?, 'review', ?, 1,
+                ) VALUES (?, 'vocabulary', ?, 'review', ?, 1,
                           'scope-test', ?, ?)
                 """,
-                (str(uuid4()), card_id, due, now.isoformat(), now.isoformat()),
+                (
+                    str(uuid4()),
+                    ids["seeded-reviewed"],
+                    due,
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
             )
             connection.commit()
 

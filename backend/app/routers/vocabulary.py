@@ -37,14 +37,11 @@ COLLECTED_ENTRY_SQL = """
     OR vocabulary_entries.user_edited = 1
     OR vocabulary_entries.manually_frequent = 1
     OR EXISTS (
-        SELECT 1 FROM vocabulary_cards AS collected_card
-        WHERE collected_card.entry_id = vocabulary_entries.id
-          AND EXISTS (
-              SELECT 1 FROM review_items AS collected_review
-              WHERE collected_review.item_type = 'vocabulary_card'
-                AND collected_review.ref_id = collected_card.id
-                AND collected_review.reps > 0
-          )
+        SELECT 1 FROM review_items AS collected_review
+        WHERE collected_review.item_type = 'vocabulary'
+          AND collected_review.ref_id = vocabulary_entries.id
+          AND collected_review.archived_at IS NULL
+          AND collected_review.reps > 0
     )
 )
 """
@@ -52,15 +49,12 @@ COLLECTED_ENTRY_SQL = """
 
 DUE_CARD_ENTRY_SQL = """
 EXISTS (
-    SELECT 1 FROM vocabulary_cards AS due_card
-    WHERE due_card.entry_id = vocabulary_entries.id
-      AND EXISTS (
-          SELECT 1 FROM review_items AS due_review
-          WHERE due_review.item_type = 'vocabulary_card'
-            AND due_review.ref_id = due_card.id
-            AND due_review.manually_suspended = 0
-            AND due_review.due_at <= :due_now
-      )
+    SELECT 1 FROM review_items AS due_review
+    WHERE due_review.item_type = 'vocabulary'
+      AND due_review.ref_id = vocabulary_entries.id
+      AND due_review.archived_at IS NULL
+      AND due_review.manually_suspended = 0
+      AND due_review.due_at <= :due_now
 )
 """
 

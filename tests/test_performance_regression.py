@@ -85,7 +85,7 @@ class RealScalePerformanceRegressionTests(unittest.TestCase):
                     uuid, item_type, ref_id, state, due_at, last_review_at,
                     stability, difficulty, reps, scheduler_version,
                     created_at, updated_at
-                ) VALUES (?, 'vocabulary_card', ?, ?, ?, ?, ?, ?, ?, 'perf-v1', ?, ?)
+                ) VALUES (?, 'vocabulary', ?, ?, ?, ?, ?, ?, ?, 'perf-v1', ?, ?)
                 """,
                 (
                     (

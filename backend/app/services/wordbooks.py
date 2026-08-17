@@ -43,17 +43,11 @@ def _state_case(alias: str = "e") -> str:
             WHEN {alias}.study_status = 'ignored' THEN 'ignored'
             WHEN {alias}.study_status = 'paused' THEN 'paused'
             WHEN EXISTS (
-                -- KI-8 P1 hotfix（Claude 紧急代改，见 handoff/015）：原 JOIN 写法使查询计划
-                -- 从 review_items 的 item_type 前缀全扫（1.9 万行 × 每个外层词条），单本词书
-                -- 计数 20.7s。改为由 vc.entry_id 索引驱动的嵌套 EXISTS，点查収敛到毫秒级。
-                SELECT 1
-                FROM vocabulary_cards AS vc
-                WHERE vc.entry_id = {alias}.id
-                  AND EXISTS (
-                    SELECT 1 FROM review_items AS ri
-                    WHERE ri.item_type = 'vocabulary_card'
-                      AND ri.ref_id = vc.id AND ri.reps > 0
-                  )
+                SELECT 1 FROM review_items AS ri
+                WHERE ri.item_type = 'vocabulary'
+                  AND ri.ref_id = {alias}.id
+                  AND ri.archived_at IS NULL
+                  AND ri.reps > 0
             ) THEN 'learning'
             ELSE 'new'
         END
@@ -351,17 +345,25 @@ def generate_wordbook_card_pool(
         available = int(
             connection.execute(
                 f"""
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT e.id)
                 FROM wordbook_entries AS we
                 JOIN vocabulary_entries AS e ON e.id = we.entry_id
-                JOIN vocabulary_cards AS vc ON vc.entry_id = e.id
                 JOIN review_items AS ri
-                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+                  ON ri.item_type = 'vocabulary' AND ri.ref_id = e.id
+                 AND ri.archived_at IS NULL
                 WHERE we.wordbook_id = ?
                   AND e.deleted_at IS NULL
                   AND e.study_status NOT IN ('known','mastered','ignored','paused')
                   AND ri.state = 'new' AND ri.manually_suspended = 0
-                  AND vc.card_type IN ({placeholders})
+                  AND EXISTS (
+                      SELECT 1 FROM vocabulary_cards AS vc
+                      LEFT JOIN vocabulary_card_type_settings AS cts
+                        ON cts.entry_id = vc.entry_id
+                       AND cts.card_type = vc.card_type
+                      WHERE vc.entry_id = e.id
+                        AND vc.card_type IN ({placeholders})
+                        AND COALESCE(cts.manually_suspended, 0) = 0
+                  )
                 """,
                 (wordbook_id, *enabled),
             ).fetchone()[0]
@@ -395,7 +397,7 @@ def generate_wordbook_card_pool(
         )
         generated += len(cards)
         if target_card_count is not None:
-            available += sum(card["card_type"] in enabled_set for card in cards)
+            available += int(any(card["card_type"] in enabled_set for card in cards))
             if available >= target_card_count:
                 break
     return generated
