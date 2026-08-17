@@ -23,6 +23,16 @@ schema 靠启动补丁（`_ensure_column`），无迁移历史、无迁移前备
 ### KI-5 ｜ P3 ｜ Python 3.14 弃用警告（asyncio.iscoroutinefunction，来自 FastAPI）
 影响：仅日志噪音。计划：等 FastAPI 升级；不自行处理。
 
+### KI-8 ｜ P1 ｜ 词书接口在真实数据量下不可用（已热修，待 Codex 复核收编）
+两处成因叠加使 GET /api/wordbooks 达 100 秒级：①`install_bundled_wordbooks` 在幂等短路检查**之前**无条件调用 `bundled_entries()` 全量物化 5.7 万词条包；②`_state_case()` 的相关 EXISTS 子查询连接方向反转，查询计划从 review_items 的 item_type 前缀全扫（1.9 万行×每个外层词条），实测单本词书计数 20.73s。
+热修（Claude 紧急代改 wordbooks.py，handoff/015）：短路检查前置；子查询改为 vc.entry_id 索引驱动的嵌套 EXISTS。实测 20.73s→25.8ms，接口 100s+→0.075s，122 测试全绿。
+待 Codex：复核收编热修；补真实规模（万级卡片）的性能回归测试。发现于 2026-08-17 用户实际使用。
+
+### KI-9 ｜ P1 ｜ 旧形近词计算在词书数据量下拖垮全服务（已热修，待 Codex 复核收编）
+旧单词本 list_entries 的 `local_similar_matches` 对全部 vocabulary_entries（词书安装后 6 千+）做纯 Python 编辑距离扫描，多请求并发时占满 GIL，全服务所有接口挂起（py-spy 证据见 handoff/015）。
+热修（Claude 紧急代改 vocabulary.py）：词条池超 4000 时暂停本地形近词建议（返回空，列表本身不受影响）。
+待 Codex：索引化/预计算实现后恢复功能；或与词典包的词形数据整合。发现于 2026-08-17 用户实际使用。
+
 ## 设计约束备忘（不是缺陷）
 
 - FTS5 trigram 对 <3 字符查询走 LIKE 回退（API_CONTRACT.md §3）；数据量到十万级片段后重新评测，必要时引入分词升级，只重建索引不动事实表。

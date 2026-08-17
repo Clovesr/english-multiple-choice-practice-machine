@@ -119,6 +119,11 @@ def local_similar_matches(
     if not entry_ids:
         return {}
     pool = connection.execute("SELECT id, term FROM vocabulary_entries").fetchall()
+    # KI-9 P1 hotfix（Claude 紧急代改，见 handoff/015）：词书安装会把词条池灌到近万级，
+    # 纯 Python 编辑距离全扫会长时间占满 GIL 拖垮全服务。超过阈值时暂停本地形近词
+    # 建议（返回空，不影响词条列表本身），待改为索引化实现后恢复。
+    if len(pool) > 4000:
+        return {}
     pool_by_id = {row["id"]: row for row in pool}
     buckets: dict[int, list[tuple[int, str, str]]] = {}
     for row in pool:
