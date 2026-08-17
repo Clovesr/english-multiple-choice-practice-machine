@@ -94,7 +94,7 @@ multipart：`file`（.txt/.md，UTF-8/GBK 自动检测）；或 JSON：`{ "title
 - `GET /api/wordbooks/{id}/entries?offset=&limit=&state=`
 - `GET /api/dictionary/lookup?term=` → `{ "found", "entry": { "lemma", "phonetic_uk", "phonetic_us", "pos_senses": [{ "pos", "gloss_zh", "gloss_en" }], "forms": [{ "kind", "text" }], "relations": [...], "tags": [...], "frequency_rank" } }`。阅读器选词浮层同源调用；离线可用。
 - `PUT /api/vocabulary/entries/{id}/state` `{ "study_status": "known|learning|ignored|paused|focus" }`。词条级状态控制其全部卡片是否入队；恢复词条不得清除用户单独暂停的卡片。
-- `GET /api/vocabulary?status=&search=&scope=collected|all`：默认 `scope=collected`，只返回“有用户痕迹”的生词本词条；`scope=all` 用于包含尚未学习的词书种子词。`collected` 判定为 `encounter_count>0 OR source_kind='user' OR user_edited=1 OR manually_frequent=1 OR EXISTS(该词条任一卡片 reps>0)`。响应 `counts` 保留 `total`，并增加 `collected_total`、`seeded_total`、`visible_total`；`status=review` 以 vocabulary_card 对应 review_item 的 FSRS `due_at` 为准，不再读取旧 `next_review_at`。`GET /api/vocabulary/home` 同样排除未学习种子词。（用户裁决见 handoff 017/018。）
+- `GET /api/vocabulary?status=&search=&scope=collected|all&limit=&offset=`：默认 `scope=collected`、`limit=120`、`offset=0`，只返回“有用户痕迹”的生词本词条；`scope=all` 用于包含尚未学习的词书种子词。`collected` 判定为 `encounter_count>0 OR source_kind='user' OR user_edited=1 OR manually_frequent=1 OR EXISTS(该词条任一卡片 reps>0)`。响应遵循 §1 分页外壳 `{ items, total, limit, offset }`；`counts` 不受分页影响，保留全库 `total`，并增加 `collected_total`、`seeded_total`、`visible_total`。`status=review` 以 vocabulary_card 对应 review_item 的 FSRS `due_at` 为准，不再读取旧 `next_review_at`。`GET /api/vocabulary/home` 同样排除未学习种子词。（用户裁决见 handoff 017/018；分页升级见 handoff 019 Claude。）
 
 ### 7.2 学习会话
 
