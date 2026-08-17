@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookMarked, BookOpenText, Brain, FileUp, FolderOpen, GraduationCap, Home, Library, MessageCircle, Moon, Settings, Sun } from 'lucide-vue-next'
+import { BookOpenText, Brain, FileUp, FolderOpen, GraduationCap, Home, Library, MessageCircle, Moon, Settings, Sun } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -36,9 +36,8 @@ onMounted(() => {
         <RouterLink to="/"><Home :size="19" aria-hidden="true" /><span>首页</span></RouterLink>
         <RouterLink to="/library"><Library :size="19" aria-hidden="true" /><span>题库与练习</span></RouterLink>
         <RouterLink to="/resources"><FolderOpen :size="19" aria-hidden="true" /><span>资源库</span></RouterLink>
-        <RouterLink to="/study" :class="{ 'router-link-active': route.path.startsWith('/wordbooks') }"><GraduationCap :size="19" aria-hidden="true" /><span>词汇学习</span></RouterLink>
+        <RouterLink to="/study" :class="{ 'router-link-active': route.path.startsWith('/wordbooks') || route.path.startsWith('/vocabulary') }"><GraduationCap :size="19" aria-hidden="true" /><span>词汇</span></RouterLink>
         <RouterLink to="/wrong"><Brain :size="19" aria-hidden="true" /><span>错题本</span></RouterLink>
-        <RouterLink to="/vocabulary"><BookMarked :size="19" aria-hidden="true" /><span>单词本</span></RouterLink>
         <RouterLink to="/imports"><FileUp :size="19" aria-hidden="true" /><span>导入题库</span></RouterLink>
         <RouterLink to="/assistant">
           <MessageCircle :size="19" aria-hidden="true" /><span>AI 学习助手</span>

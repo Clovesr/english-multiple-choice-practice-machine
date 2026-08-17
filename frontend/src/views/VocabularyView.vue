@@ -3,6 +3,7 @@ import { BookOpen, Check, RefreshCw, Search, Settings, Star, Trash2 } from 'luci
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { del, get, post, put } from '../api'
+import VocabTabs from '../components/study/VocabTabs.vue'
 
 const route = useRoute()
 const items = ref<any[]>([])
@@ -143,8 +144,9 @@ onMounted(() => { void load(); void loadOverview() })
 
 <template>
   <div class="page vocabulary-page">
+    <VocabTabs />
     <div class="page-head">
-      <div><span class="eyebrow">VOCABULARY BOOK</span><h1>我的单词本</h1><p class="lead">从阅读与真题语境中收集、理解并复习真正困扰你的词。</p></div>
+      <div><span class="eyebrow">MY WORDS</span><h1>生词本</h1><p class="lead">你在阅读与真题里亲手遇见的词：完整语境、笔记与记忆档案都在这里。</p></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="button ghost" @click="showDisplayDialog=true"><Settings :size="17" />显示设置</button>
         <RouterLink class="button" to="/study"><BookOpen :size="17" />开始今日复习</RouterLink>

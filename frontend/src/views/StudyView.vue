@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Flame, GraduationCap, Loader2, PartyPopper, Settings2 } from 'lucide-vue-next'
+import { Flame, Loader2, PartyPopper, Settings2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import type { ApiError } from '../api'
 import {
@@ -19,6 +19,7 @@ import {
 } from '../services/study'
 import { getCapability } from '../services/speech'
 import StudyCardView from '../components/study/StudyCardView.vue'
+import VocabTabs from '../components/study/VocabTabs.vue'
 
 const session = ref<StudySession | null>(null)
 const overview = ref<StudyOverview | null>(null)
@@ -140,18 +141,16 @@ onMounted(async () => {
 
 <template>
   <div class="page" style="max-width:860px">
+    <VocabTabs />
     <div class="page-head">
       <div>
         <span class="eyebrow">STUDY SESSION</span>
-        <h1>词汇学习</h1>
+        <h1>记单词</h1>
         <p class="lead" v-if="session">
           待复习 {{ session.counts.due_remaining }} · 新卡 {{ session.counts.new_remaining }} · 今日已完成 {{ session.counts.done_today }}
         </p>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="button ghost compact" type="button" aria-label="学习设置" @click="toggleSettings"><Settings2 :size="16" /></button>
-        <RouterLink class="button secondary compact" to="/wordbooks"><GraduationCap :size="16" />词书与计划</RouterLink>
-      </div>
+      <button class="button ghost compact" type="button" aria-label="学习设置" @click="toggleSettings"><Settings2 :size="16" />学习设置</button>
     </div>
 
     <div v-if="overview && backendReady" class="card overview-strip">
