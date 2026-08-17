@@ -1,0 +1,9 @@
+考研阅读精读：技术与记忆
+
+Technology has changed how we remember. 过去我们依靠笔记本和重复抄写，Now search engines remember for us.
+
+心理学家把这种现象称为 transactive memory：当我们知道信息存放在哪里时，大脑倾向于记住"位置"而不是"内容"。
+
+对语言学习者来说，这既是机会也是陷阱。工具可以安排复习节奏，but the effort of recall itself is what builds memory. 检索练习（retrieval practice）不可外包。
+
+结论：让系统记住"何时复习"，让大脑负责"努力回想"。
