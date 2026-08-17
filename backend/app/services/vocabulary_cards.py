@@ -185,6 +185,85 @@ def _accept_values(lemma: str, forms: list[sqlite3.Row]) -> list[str]:
     return result
 
 
+def _reverse_distractors(
+    connection: sqlite3.Connection,
+    entry_id: int,
+    accept: list[str],
+    *,
+    limit: int = 3,
+) -> list[str]:
+    """Return stable, distinct reverse-card choices without inventing content."""
+
+    if limit <= 0:
+        return []
+    excluded = {normalize_answer(value) for value in accept if value.strip()}
+    distractors: list[str] = []
+
+    def add_candidates(rows: list[sqlite3.Row]) -> None:
+        for row in rows:
+            candidate = str(row["candidate"] or "").strip()
+            normalized = normalize_answer(candidate)
+            if not candidate or normalized in excluded:
+                continue
+            excluded.add(normalized)
+            distractors.append(candidate)
+            if len(distractors) >= limit:
+                return
+
+    # Prefer neighbours from the same wordbook so choices stay relevant to the
+    # learner's current material. The ordering is deterministic, otherwise a
+    # repeated generation pass would bump content_version and churn cards.
+    same_wordbook = connection.execute(
+        """
+        SELECT candidate_entry.id,
+               COALESCE(
+                   NULLIF(trim(candidate_entry.lemma), ''),
+                   NULLIF(trim(candidate_entry.term), '')
+               ) AS candidate
+        FROM wordbook_entries AS target
+        JOIN wordbook_entries AS candidate_membership
+          ON candidate_membership.wordbook_id = target.wordbook_id
+        JOIN vocabulary_entries AS candidate_entry
+          ON candidate_entry.id = candidate_membership.entry_id
+        WHERE target.entry_id = ?
+          AND candidate_entry.id <> ?
+          AND candidate_entry.deleted_at IS NULL
+          AND COALESCE(
+                NULLIF(trim(candidate_entry.lemma), ''),
+                NULLIF(trim(candidate_entry.term), '')
+              ) IS NOT NULL
+        GROUP BY candidate_entry.id
+        ORDER BY
+            MIN(COALESCE(NULLIF(candidate_membership.frequency_rank, 0), 2147483647)),
+            MIN(candidate_membership.sequence),
+            candidate_entry.id
+        LIMIT 24
+        """,
+        (entry_id, entry_id),
+    ).fetchall()
+    add_candidates(same_wordbook)
+
+    if len(distractors) < limit:
+        # A one-off/custom entry may not share a wordbook with enough terms.
+        # Fall back to persisted vocabulary facts, never generated fake words.
+        global_candidates = connection.execute(
+            """
+            SELECT id,
+                   COALESCE(NULLIF(trim(lemma), ''), NULLIF(trim(term), '')) AS candidate
+            FROM vocabulary_entries
+            WHERE id <> ?
+              AND deleted_at IS NULL
+              AND COALESCE(NULLIF(trim(lemma), ''), NULLIF(trim(term), '')) IS NOT NULL
+            ORDER BY id
+            LIMIT 64
+            """,
+            (entry_id,),
+        ).fetchall()
+        add_candidates(global_candidates)
+
+    return distractors
+
+
 def _cloze_sentence(sentence: str, surface_form: str, lemma: str) -> str:
     for candidate in (surface_form, lemma):
         if not candidate:
@@ -212,6 +291,7 @@ def generate_cards_for_entry(
     cards: list[dict[str, Any]] = []
 
     if lemma and meaning:
+        reverse_distractors = _reverse_distractors(connection, entry_id, accept)
         cards.append(
             _ensure_card(
                 connection,
@@ -232,7 +312,11 @@ def generate_cards_for_entry(
                 variant_key="primary",
                 generation_source=generation_source,
                 prompt={"text": meaning},
-                answer={"text": lemma, "accept": accept, "distractors": []},
+                answer={
+                    "text": lemma,
+                    "accept": accept,
+                    "distractors": reverse_distractors,
+                },
                 timestamp=timestamp,
             )
         )

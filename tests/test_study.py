@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import shutil
 import unittest
@@ -221,6 +222,15 @@ class StudyApiTests(unittest.TestCase):
             self.assertEqual(
                 {row["card_type"] for row in cards},
                 {"forward", "reverse", "listening", "spelling"},
+            )
+            reverse_answers = [
+                json.loads(row["answer_data"])
+                for row in cards
+                if row["card_type"] == "reverse"
+            ]
+            self.assertTrue(reverse_answers)
+            self.assertTrue(
+                all(len(answer["distractors"]) == 3 for answer in reverse_answers)
             )
             self.assertEqual(
                 connection.execute(
@@ -736,6 +746,7 @@ class StudyApiTests(unittest.TestCase):
     def test_all_six_card_types_share_one_fsrs_grade_core(self) -> None:
         collected = self._collect()
         entry_id = int(collected["entry"]["id"])
+        self._create_wordbook(size=3, term_prefix="distractor")
         from backend.app.database import connect
         from backend.app.services.vocabulary_cards import generate_cards_for_entry
 
@@ -764,14 +775,35 @@ class StudyApiTests(unittest.TestCase):
             set(cards),
             {"forward", "reverse", "listening", "spelling", "cloze", "collocation"},
         )
+        reverse = cards["reverse"]
+        self.assertEqual(len(reverse["answer"]["distractors"]), 3)
+        self.assertEqual(len(set(reverse["answer"]["distractors"])), 3)
+        self.assertNotIn(
+            "ability",
+            {choice.casefold() for choice in reverse["answer"]["distractors"]},
+        )
+
+        wrong_choice = self.client.post(
+            f"/api/study/cards/{reverse['card_id']}/grade",
+            json={
+                "attempt_id": str(uuid4()),
+                "rating": 3,
+                "answer_given": reverse["answer"]["distractors"][0],
+                "duration_ms": 100,
+            },
+        )
+        self.assertEqual(wrong_choice.status_code, 200, wrong_choice.text)
+        self.assertFalse(wrong_choice.json()["auto_correct"])
+
         answers = {
-            "reverse": "ability",
             "listening": "ability",
             "spelling": "ability",
             "cloze": "ability",
             "collocation": "ability to",
         }
         for card_type, card in cards.items():
+            if card_type == "reverse":
+                continue
             body = {
                 "attempt_id": str(uuid4()),
                 "rating": 3,
