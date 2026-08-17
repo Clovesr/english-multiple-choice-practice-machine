@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from .dictionary import DictionaryUnavailableError, lookup_dictionary
+from .learning import record_learning_event
 from .vocabulary import _serialize_entry, validate_term, vocabulary_key
 from .vocabulary_cards import generate_cards_for_entry, utc_now
 
@@ -327,6 +328,18 @@ def collect_from_selection(
             connection,
             entry_id,
             generation_source="selection_dictionary" if enriched else "selection_context",
+        )
+        record_learning_event(
+            connection,
+            verb="collect_word",
+            object_type="vocabulary_entry",
+            object_id=entry_id,
+            result={
+                "created": created,
+                "enriched": enriched,
+                "resource_id": resource_id,
+                "segment_id": segment_id,
+            },
         )
         connection.commit()
     except Exception:

@@ -20,9 +20,12 @@ from .routers import (
     practice,
     question_bank_profiles,
     question_banks,
+    reports,
     review,
     resources,
+    skills,
     study,
+    tasks,
     vocabulary,
     wordbooks,
     wrong,
@@ -81,6 +84,9 @@ app.include_router(dictionary.router, prefix="/api")
 app.include_router(wordbooks.router, prefix="/api")
 app.include_router(study.router, prefix="/api")
 app.include_router(review.router, prefix="/api")
+app.include_router(skills.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
+app.include_router(reports.router, prefix="/api")
 
 
 @app.get("/api/health")

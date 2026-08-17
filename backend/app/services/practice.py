@@ -12,6 +12,7 @@ from .questions import parse_json, serialize_unit
 from .listening import listening_unit_has_audio_sql
 from .learning import record_learning_event
 from .review import ensure_wrong_question_item
+from .skills import update_mastery_for_question
 
 
 class IncompleteSubmissionError(ValueError):
@@ -539,6 +540,11 @@ def _grade_answer_rows(
                     "session_id": int(row["session_id"]),
                     "user_answer": str(row["user_answer"]),
                 },
+            )
+            update_mastery_for_question(
+                connection,
+                int(row["question_id"]),
+                correct=is_correct,
             )
             if not is_correct:
                 existing_item = connection.execute(

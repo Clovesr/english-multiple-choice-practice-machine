@@ -242,6 +242,18 @@ class ReviewItemGrade(BaseModel):
     duration_ms: int = Field(default=0, ge=0, le=3_600_000)
 
 
+class SkillCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    parent_id: int | None = Field(default=None, ge=1)
+    skill_type: str = Field(default="grammar", min_length=1, max_length=80)
+    stage: str = Field(default="", max_length=80)
+    difficulty: int = Field(default=3, ge=1, le=5)
+
+
+class QuestionSkillsUpdate(BaseModel):
+    skill_ids: list[int] = Field(default_factory=list, max_length=100)
+
+
 class StudySettingsUpdate(BaseModel):
     daily_new: int | None = Field(default=None, ge=0, le=500)
     daily_review_max: int | None = Field(default=None, ge=0, le=5000)

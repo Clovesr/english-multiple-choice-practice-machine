@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from .fsrs_scheduler import schedule_review
+from .learning import record_learning_event
 from .vocabulary_cards import (
     CARD_TYPES,
     generate_cards_for_entry,
@@ -838,6 +839,23 @@ def grade_card(
                     row["entry_id"],
                 ),
             )
+        record_learning_event(
+            connection,
+            verb="review",
+            object_type="vocabulary_card",
+            object_id=card_id,
+            result={
+                "attempt_id": attempt_id,
+                "card_type": str(row["card_type"]),
+                "correct": auto_correct if auto_correct is not None else rating >= 3,
+                "entry_id": int(row["entry_id"]),
+                "new_word": row["state"] == "new" and row["card_type"] == "forward",
+                "rating": rating,
+                "review_item_id": int(row["id"]),
+            },
+            duration_ms=duration_ms,
+            occurred_at=_iso(now),
+        )
         connection.commit()
         log = connection.execute(
             "SELECT * FROM review_logs WHERE id = ?", (log_cursor.lastrowid,)

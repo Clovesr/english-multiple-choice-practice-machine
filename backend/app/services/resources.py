@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .. import database as database_module
 from ..database import new_trash_batch
+from .learning import record_learning_event
 
 
 MAX_RESOURCE_BYTES = 20 * 1024 * 1024
@@ -398,6 +399,19 @@ def save_progress(
         """,
         (resource_id, last_segment_id, scroll_ratio, reading_ms_delta, now, now),
     )
+    if reading_ms_delta:
+        record_learning_event(
+            connection,
+            verb="read",
+            object_type="resource",
+            object_id=resource_id,
+            result={
+                "last_segment_id": last_segment_id,
+                "scroll_ratio": scroll_ratio,
+            },
+            duration_ms=reading_ms_delta,
+            occurred_at=now,
+        )
     connection.commit()
     return get_resource(connection, resource_id)["progress"]
 
