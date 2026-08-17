@@ -19,6 +19,8 @@ from .wordbooks import generate_wordbook_card_pool
 
 
 INELIGIBLE_ENTRY_STATES = ("known", "mastered", "ignored", "paused")
+STABLE_REVIEW_MIN_DAYS = 1.0
+COLLOCATION_ROTATION_INTERVAL = 5
 SPELLING_VARIANTS = {
     "colour": "color",
     "favour": "favor",
@@ -212,7 +214,8 @@ def _card_payload(connection: sqlite3.Connection, card_id: int) -> dict[str, Any
                e.contextual_meaning, e.memory_hint, e.note
         FROM vocabulary_cards AS vc
         JOIN review_items AS ri
-          ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+          ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
+         AND ri.archived_at IS NULL
         JOIN vocabulary_entries AS e ON e.id = vc.entry_id
         WHERE vc.id = ?
         """,
@@ -283,17 +286,99 @@ def _card_payload(connection: sqlite3.Connection, card_id: int) -> dict[str, Any
     }
 
 
-def _eligibility_sql(enabled: list[str], *, alias: str = "ri") -> tuple[str, list[Any]]:
+def _rotation_type_order(
+    *,
+    state: str,
+    reps: int,
+    stability: float,
+) -> tuple[str, ...]:
+    """Return a deterministic, stage-aware card-type preference order."""
+
+    if state == "new" or reps <= 0:
+        preferred = ("forward",)
+    elif state in {"learning", "relearning"} or stability < STABLE_REVIEW_MIN_DAYS:
+        learning = ("reverse", "listening")
+        offset = reps % len(learning)
+        preferred = learning[offset:] + learning[:offset]
+    else:
+        advanced = ("spelling", "cloze")
+        offset = reps % len(advanced)
+        preferred = advanced[offset:] + advanced[:offset]
+        if reps % COLLOCATION_ROTATION_INTERVAL == 0:
+            preferred = ("collocation",) + preferred
+    return tuple(dict.fromkeys((*preferred, *CARD_TYPES)))
+
+
+def _select_rotated_card_ids(
+    connection: sqlite3.Connection,
+    word_rows: list[sqlite3.Row],
+    enabled: list[str],
+) -> list[int]:
+    if not word_rows or not enabled:
+        return []
+    entry_ids = [int(row["entry_id"]) for row in word_rows]
+    entry_placeholders = ",".join("?" for _ in entry_ids)
+    type_placeholders = ",".join("?" for _ in enabled)
+    cards = connection.execute(
+        f"""
+        SELECT vc.id, vc.entry_id, vc.card_type
+        FROM vocabulary_cards AS vc
+        LEFT JOIN vocabulary_card_type_settings AS cts
+          ON cts.entry_id = vc.entry_id AND cts.card_type = vc.card_type
+        WHERE vc.entry_id IN ({entry_placeholders})
+          AND vc.card_type IN ({type_placeholders})
+          AND COALESCE(cts.manually_suspended, 0) = 0
+        ORDER BY vc.entry_id, vc.card_type, vc.id
+        """,
+        (*entry_ids, *enabled),
+    ).fetchall()
+    by_entry: dict[int, dict[str, list[int]]] = {}
+    for card in cards:
+        by_entry.setdefault(int(card["entry_id"]), {}).setdefault(
+            str(card["card_type"]), []
+        ).append(int(card["id"]))
+
+    selected: list[int] = []
+    for word in word_rows:
+        entry_id = int(word["entry_id"])
+        available = by_entry.get(entry_id, {})
+        for card_type in _rotation_type_order(
+            state=str(word["state"]),
+            reps=int(word["reps"]),
+            stability=float(word["stability"]),
+        ):
+            variants = available.get(card_type)
+            if variants:
+                selected.append(variants[int(word["reps"]) % len(variants)])
+                break
+    return selected
+
+
+def _eligibility_sql(
+    enabled: list[str],
+    *,
+    alias: str = "ri",
+    entry_alias: str = "e",
+) -> tuple[str, list[Any]]:
     if not enabled:
         return "0 = 1", []
     placeholders = ",".join("?" for _ in enabled)
     return (
         f"""
-        {alias}.item_type = 'vocabulary_card'
+        {alias}.item_type = 'vocabulary'
+        AND {alias}.archived_at IS NULL
         AND {alias}.manually_suspended = 0
-        AND vc.card_type IN ({placeholders})
-        AND e.deleted_at IS NULL
-        AND e.study_status NOT IN ('known','mastered','ignored','paused')
+        AND {entry_alias}.deleted_at IS NULL
+        AND {entry_alias}.study_status NOT IN ('known','mastered','ignored','paused')
+        AND EXISTS (
+            SELECT 1 FROM vocabulary_cards AS eligible_card
+            LEFT JOIN vocabulary_card_type_settings AS eligible_type
+              ON eligible_type.entry_id = eligible_card.entry_id
+             AND eligible_type.card_type = eligible_card.card_type
+            WHERE eligible_card.entry_id = {entry_alias}.id
+              AND eligible_card.card_type IN ({placeholders})
+              AND COALESCE(eligible_type.manually_suspended, 0) = 0
+        )
         """,
         list(enabled),
     )
@@ -362,8 +447,7 @@ def _queue_counts(
             f"""
             SELECT COUNT(*)
             FROM review_items AS ri
-            JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-            JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at <= ?
             """,
             (*params, _iso(now)),
@@ -375,8 +459,7 @@ def _queue_counts(
             f"""
             SELECT COUNT(*)
             FROM review_items AS ri
-            JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-            JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state = 'new'
               AND (
                 e.encounter_count > 0
@@ -409,12 +492,15 @@ def _close_ineligible_session_cards(
     rows = connection.execute(
         """
         SELECT sc.card_id, vc.card_type, ri.manually_suspended, e.study_status,
-               e.deleted_at
+               e.deleted_at, COALESCE(cts.manually_suspended, 0) AS type_suspended
         FROM study_session_cards AS sc
         JOIN vocabulary_cards AS vc ON vc.id = sc.card_id
         JOIN review_items AS ri
-          ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+          ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
+         AND ri.archived_at IS NULL
         JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+        LEFT JOIN vocabulary_card_type_settings AS cts
+          ON cts.entry_id = vc.entry_id AND cts.card_type = vc.card_type
         WHERE sc.session_id = ? AND sc.status = 'pending'
         """,
         (session_id,),
@@ -425,6 +511,7 @@ def _close_ineligible_session_cards(
         for row in rows
         if row["card_type"] not in enabled_set
         or bool(row["manually_suspended"])
+        or bool(row["type_suspended"])
         or row["deleted_at"] is not None
         or row["study_status"] in INELIGIBLE_ENTRY_STATES
     ]
@@ -481,10 +568,10 @@ def _new_order_sql(order: str) -> str:
     if order == "random":
         return "RANDOM()"
     if order == "sequence":
-        return "COALESCE(we.sequence, 2147483647), vc.entry_id, vc.id"
+        return "COALESCE(we.sequence, 2147483647), e.id"
     return (
         "CASE WHEN COALESCE(we.frequency_rank, 0) > 0 THEN 0 ELSE 1 END, "
-        "COALESCE(we.frequency_rank, 2147483647), COALESCE(we.sequence, 2147483647), vc.id"
+        "COALESCE(we.frequency_rank, 2147483647), COALESCE(we.sequence, 2147483647), e.id"
     )
 
 
@@ -595,27 +682,28 @@ def create_or_resume_session(
         due_cutoff -= timedelta(seconds=1)
     due_rows = connection.execute(
         f"""
-        SELECT vc.id AS card_id
+        SELECT e.id AS entry_id, ri.state, ri.reps, ri.stability
         FROM review_items AS ri
-        JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-        JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+        JOIN vocabulary_entries AS e ON e.id = ri.ref_id
         WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at <= ?
         ORDER BY ri.due_at, ri.id
         LIMIT ?
         """,
         (*eligibility_params, _iso(due_cutoff), review_limit),
     ).fetchall()
-    selected: list[tuple[int, str]] = [(int(row["card_id"]), "due") for row in due_rows]
+    selected: list[tuple[int, str]] = [
+        (card_id, "due")
+        for card_id in _select_rotated_card_ids(connection, list(due_rows), enabled)
+    ]
     new_limit = min(max(0, limit - len(selected)), counts["new_remaining"])
     if new_limit:
         wordbook_id = int(plan["wordbook_id"]) if plan is not None else 0
         order = str(plan["new_order"] if plan is not None else settings["new_card_order"])
         new_rows = connection.execute(
             f"""
-            SELECT vc.id AS card_id
+            SELECT e.id AS entry_id, ri.state, ri.reps, ri.stability
             FROM review_items AS ri
-            JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-            JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             LEFT JOIN wordbook_entries AS we
               ON we.wordbook_id = ? AND we.entry_id = e.id
             WHERE {eligibility} AND ri.state = 'new'
@@ -626,7 +714,10 @@ def create_or_resume_session(
             """,
             (wordbook_id, *eligibility_params, new_limit),
         ).fetchall()
-        selected.extend((int(row["card_id"]), "new") for row in new_rows)
+        selected.extend(
+            (card_id, "new")
+            for card_id in _select_rotated_card_ids(connection, list(new_rows), enabled)
+        )
 
     timestamp = _iso(now)
     session_uuid = str(uuid4())
@@ -708,18 +799,22 @@ def grade_card(
         row = connection.execute(
             """
             SELECT ri.*, vc.card_type, vc.answer_data, vc.entry_id,
-                   e.study_status, e.deleted_at
+                   e.study_status, e.deleted_at,
+                   COALESCE(cts.manually_suspended, 0) AS type_suspended
             FROM vocabulary_cards AS vc
             JOIN review_items AS ri
-              ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+              ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
+             AND ri.archived_at IS NULL
             JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            LEFT JOIN vocabulary_card_type_settings AS cts
+              ON cts.entry_id = vc.entry_id AND cts.card_type = vc.card_type
             WHERE vc.id = ?
             """,
             (card_id,),
         ).fetchone()
         if row is None:
             raise LookupError("学习卡不存在")
-        if bool(row["manually_suspended"]):
+        if bool(row["manually_suspended"]) or bool(row["type_suspended"]):
             raise ValueError("学习卡已暂停")
         if row["deleted_at"] is not None or row["study_status"] in INELIGIBLE_ENTRY_STATES:
             raise ValueError("该词条当前不在学习队列中")
@@ -824,24 +919,23 @@ def grade_card(
             """,
             (_iso(now),),
         )
-        if str(row["card_type"]) == "forward":
-            connection.execute(
-                """
-                UPDATE vocabulary_entries
-                SET next_review_at = ?, last_reviewed_at = ?,
-                    study_status = CASE
-                        WHEN study_status IN ('known','ignored','paused') THEN study_status
-                        ELSE 'learning' END,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    scheduled["due_at"],
-                    scheduled["last_review_at"],
-                    scheduled["updated_at"],
-                    row["entry_id"],
-                ),
-            )
+        connection.execute(
+            """
+            UPDATE vocabulary_entries
+            SET next_review_at = ?, last_reviewed_at = ?,
+                study_status = CASE
+                    WHEN study_status IN ('known','ignored','paused') THEN study_status
+                    ELSE 'learning' END,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                scheduled["due_at"],
+                scheduled["last_review_at"],
+                scheduled["updated_at"],
+                row["entry_id"],
+            ),
+        )
         record_learning_event(
             connection,
             verb="review",
@@ -852,7 +946,7 @@ def grade_card(
                 "card_type": str(row["card_type"]),
                 "correct": auto_correct if auto_correct is not None else rating >= 3,
                 "entry_id": int(row["entry_id"]),
-                "new_word": row["state"] == "new" and row["card_type"] == "forward",
+                "new_word": row["state"] == "new",
                 "rating": rating,
                 "review_item_id": int(row["id"]),
             },
@@ -875,46 +969,74 @@ def set_card_suspended(
     *,
     suspended: bool,
 ) -> dict[str, Any]:
-    item = connection.execute(
+    row = connection.execute(
         """
-        SELECT ri.* FROM review_items AS ri
-        JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-        WHERE ri.item_type = 'vocabulary_card' AND vc.id = ?
+        SELECT ri.*, vc.entry_id, vc.card_type
+        FROM vocabulary_cards AS vc
+        JOIN review_items AS ri
+          ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
+         AND ri.archived_at IS NULL
+        WHERE vc.id = ?
         """,
         (card_id,),
     ).fetchone()
-    if item is None:
+    if row is None:
         raise LookupError("学习卡不存在")
+    timestamp = utc_now()
     connection.execute(
-        "UPDATE review_items SET manually_suspended = ?, updated_at = ? WHERE id = ?",
-        (int(suspended), utc_now(), item["id"]),
+        """
+        INSERT INTO vocabulary_card_type_settings(
+            entry_id, card_type, manually_suspended, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(entry_id, card_type) DO UPDATE SET
+            manually_suspended = excluded.manually_suspended,
+            updated_at = excluded.updated_at
+        """,
+        (
+            row["entry_id"],
+            row["card_type"],
+            int(suspended),
+            timestamp,
+            timestamp,
+        ),
     )
     if suspended:
         connection.execute(
             """
             UPDATE study_session_cards SET status = 'suspended'
-            WHERE card_id = ? AND status = 'pending'
+            WHERE status = 'pending' AND card_id IN (
+                SELECT id FROM vocabulary_cards
+                WHERE entry_id = ? AND card_type = ?
+            )
             """,
-            (card_id,),
+            (row["entry_id"], row["card_type"]),
         )
     else:
         connection.execute(
             """
             UPDATE study_session_cards
             SET status = 'pending', graded_at = NULL
-            WHERE card_id = ? AND status = 'suspended'
+            WHERE status = 'suspended' AND card_id IN (
+                SELECT id FROM vocabulary_cards
+                WHERE entry_id = ? AND card_type = ?
+            )
               AND EXISTS (
                   SELECT 1 FROM study_sessions AS s
                   WHERE s.id = study_session_cards.session_id AND s.status = 'active'
               )
             """,
-            (card_id,),
+            (row["entry_id"], row["card_type"]),
         )
     connection.commit()
     updated = connection.execute(
-        "SELECT * FROM review_items WHERE id = ?", (item["id"],)
+        "SELECT * FROM review_items WHERE id = ?", (row["id"],)
     ).fetchone()
-    return {"card_id": card_id, "review_item": _review_item_payload(updated)}
+    return {
+        "card_id": card_id,
+        "card_type": str(row["card_type"]),
+        "card_type_suspended": suspended,
+        "review_item": _review_item_payload(updated),
+    }
 
 
 def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
@@ -929,8 +1051,7 @@ def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
         connection.execute(
             f"""
             SELECT COUNT(*) FROM review_items AS ri
-            JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-            JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.state <> 'new' AND ri.due_at < ?
             """,
             (*params, _iso(start)),
@@ -967,8 +1088,7 @@ def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
     for row in connection.execute(
         f"""
         SELECT ri.due_at FROM review_items AS ri
-        JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-        JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+        JOIN vocabulary_entries AS e ON e.id = ri.ref_id
         WHERE {eligibility} AND ri.state <> 'new'
         """,
         params,
@@ -988,8 +1108,7 @@ def get_overview(connection: sqlite3.Connection) -> dict[str, Any]:
         connection.execute(
             f"""
             SELECT COUNT(*) FROM review_items AS ri
-            JOIN vocabulary_cards AS vc ON vc.id = ri.ref_id
-            JOIN vocabulary_entries AS e ON e.id = vc.entry_id
+            JOIN vocabulary_entries AS e ON e.id = ri.ref_id
             WHERE {eligibility} AND ri.lapses >= ?
             """,
             (*params, int(settings["leech_threshold"])),
@@ -1075,10 +1194,9 @@ def _sprint_payload(
             WHERE we.wordbook_id = ?
               AND e.study_status NOT IN ('known','mastered','ignored')
               AND NOT EXISTS (
-                  SELECT 1 FROM vocabulary_cards AS vc
-                  JOIN review_items AS ri
-                    ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
-                  WHERE vc.entry_id = e.id AND ri.reps > 0
+                  SELECT 1 FROM review_items AS ri
+                  WHERE ri.item_type = 'vocabulary' AND ri.ref_id = e.id
+                    AND ri.archived_at IS NULL AND ri.reps > 0
               )
             """,
             (plan["wordbook_id"],),
@@ -1137,10 +1255,9 @@ def start_sprint(
             WHERE we.wordbook_id = ?
               AND e.study_status NOT IN ('known','mastered','ignored')
               AND NOT EXISTS (
-                  SELECT 1 FROM vocabulary_cards AS vc
-                  JOIN review_items AS ri
-                    ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
-                  WHERE vc.entry_id = e.id AND ri.reps > 0
+                  SELECT 1 FROM review_items AS ri
+                  WHERE ri.item_type = 'vocabulary' AND ri.ref_id = e.id
+                    AND ri.archived_at IS NULL AND ri.reps > 0
               )
             """,
             (wordbook_id,),

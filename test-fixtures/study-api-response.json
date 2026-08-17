@@ -3,18 +3,18 @@
     "entry_id": 1,
     "cards": [
       { "card_id": 1, "card_type": "forward", "review_item_id": 1 },
-      { "card_id": 2, "card_type": "reverse", "review_item_id": 2 },
-      { "card_id": 3, "card_type": "listening", "review_item_id": 3 },
-      { "card_id": 4, "card_type": "spelling", "review_item_id": 4 },
-      { "card_id": 5, "card_type": "cloze", "review_item_id": 5 }
+      { "card_id": 2, "card_type": "reverse", "review_item_id": 1 },
+      { "card_id": 3, "card_type": "listening", "review_item_id": 1 },
+      { "card_id": 4, "card_type": "spelling", "review_item_id": 1 },
+      { "card_id": 5, "card_type": "cloze", "review_item_id": 1 }
     ],
     "enriched_from_dictionary": true,
     "merged": false
   },
   "session": {
-    "session_id": "1d3627f9-3c5c-473a-a39a-55ab83432658",
+    "session_id": "c017827a-c197-4382-ab77-6ee82b4498e3",
     "counts": {
-      "new_remaining": 5,
+      "new_remaining": 1,
       "due_remaining": 0,
       "done_today": 0
     },
@@ -22,12 +22,15 @@
       {
         "card_id": 1,
         "review_item_id": 1,
+        "entry_id": 1,
         "card_type": "forward",
         "state": "new",
         "entry": {
           "lemma": "ability",
           "phonetic_uk": "ә'biliti",
           "phonetic_us": "",
+          "memory_hint": "able + ity，能力",
+          "note": "每天复习一次",
           "senses": [
             {
               "pos": "n.",
@@ -55,16 +58,58 @@
             "source": "A7 Sample"
           }
         ]
-      },
+      }
+    ]
+  },
+  "grade": {
+    "card_id": 1,
+    "review_item": {
+      "id": 1,
+      "uuid": "888582ba-d11d-4eac-af11-6506df0cd874",
+      "item_type": "vocabulary",
+      "ref_id": 1,
+      "state": "learning",
+      "step": 1,
+      "due_at": "2026-08-17T16:12:54+00:00",
+      "last_review_at": "2026-08-17T16:02:54+00:00",
+      "stability": 2.3065,
+      "difficulty": 2.118103970459016,
+      "scheduled_days": 0.006944444444444444,
+      "elapsed_days": 0.0,
+      "reps": 1,
+      "lapses": 0,
+      "manually_suspended": false,
+      "scheduler": "fsrs",
+      "scheduler_version": "py-fsrs-6.3.2",
+      "created_at": "2026-08-17T16:02:54+00:00",
+      "updated_at": "2026-08-17T16:02:54+00:00"
+    },
+    "review_log_id": 1,
+    "next_due_at": "2026-08-17T16:12:54+00:00",
+    "auto_correct": null,
+    "final_rating": 3,
+    "attempt_id": "b0326f68-f735-46da-b3f1-a9a38e40ce2b"
+  },
+  "learning_session": {
+    "session_id": "246ebd38-d4b0-466d-835c-033aebcd7983",
+    "counts": {
+      "new_remaining": 0,
+      "due_remaining": 1,
+      "done_today": 1
+    },
+    "cards": [
       {
-        "card_id": 2,
-        "review_item_id": 2,
-        "card_type": "reverse",
-        "state": "new",
+        "card_id": 3,
+        "review_item_id": 1,
+        "entry_id": 1,
+        "card_type": "listening",
+        "state": "learning",
         "entry": {
           "lemma": "ability",
           "phonetic_uk": "ә'biliti",
           "phonetic_us": "",
+          "memory_hint": "able + ity，能力",
+          "note": "每天复习一次",
           "senses": [
             {
               "pos": "n.",
@@ -79,11 +124,11 @@
           ]
         },
         "prompt": {
-          "text": "能力, 才干；[经] 能力, 才能"
+          "text": "",
+          "tts_text": "ability"
         },
         "answer": {
           "accept": ["ability", "abilities"],
-          "distractors": [],
           "text": "ability"
         },
         "contexts": [
@@ -94,71 +139,5 @@
         ]
       }
     ]
-  },
-  "grade": {
-    "card_id": 1,
-    "review_item": {
-      "id": 1,
-      "uuid": "142ce68a-cd28-42a3-bb37-4d5c59946abe",
-      "item_type": "vocabulary_card",
-      "ref_id": 1,
-      "state": "learning",
-      "step": 1,
-      "due_at": "2026-08-17T13:44:21+00:00",
-      "last_review_at": "2026-08-17T13:34:21+00:00",
-      "stability": 2.3065,
-      "difficulty": 2.118103970459016,
-      "scheduled_days": 0.006944444444444444,
-      "elapsed_days": 0.0,
-      "reps": 1,
-      "lapses": 0,
-      "manually_suspended": false,
-      "scheduler": "fsrs",
-      "scheduler_version": "py-fsrs-6.3.2",
-      "created_at": "2026-08-17T13:34:21+00:00",
-      "updated_at": "2026-08-17T13:34:21+00:00"
-    },
-    "review_log_id": 1,
-    "next_due_at": "2026-08-17T13:44:21+00:00",
-    "auto_correct": null,
-    "final_rating": 3,
-    "attempt_id": "62500753-7b03-495e-b08e-d79f0d444728"
-  },
-  "settings": {
-    "daily_new": 20,
-    "daily_review_max": 200,
-    "enabled_card_types": [
-      "forward",
-      "reverse",
-      "listening",
-      "spelling",
-      "cloze",
-      "collocation"
-    ],
-    "new_card_order": "frequency",
-    "leech_threshold": 8,
-    "backlog_mode": "spread"
-  },
-  "overview": {
-    "today": {
-      "new_done": 1,
-      "new_target": 20,
-      "reviews_done": 0,
-      "due_left": 0
-    },
-    "overdue_total": 0,
-    "streak_days": 1,
-    "retention_7d": 1.0,
-    "retention_30d": 1.0,
-    "forecast_7d": [
-      { "date": "2026-08-17", "due": 1 },
-      { "date": "2026-08-18", "due": 0 },
-      { "date": "2026-08-19", "due": 0 },
-      { "date": "2026-08-20", "due": 0 },
-      { "date": "2026-08-21", "due": 0 },
-      { "date": "2026-08-22", "due": 0 },
-      { "date": "2026-08-23", "due": 0 }
-    ],
-    "leeches": 0
   }
 }

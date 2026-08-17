@@ -162,7 +162,7 @@ class StudyApiTests(unittest.TestCase):
                 """
                 UPDATE review_items
                 SET state = 'review', due_at = ?, reps = 1
-                WHERE item_type = 'vocabulary_card'
+                WHERE item_type = 'vocabulary'
                 """,
                 ((datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),),
             )
@@ -180,7 +180,7 @@ class StudyApiTests(unittest.TestCase):
                 connection.execute(
                     "SELECT COUNT(DISTINCT entry_id) FROM vocabulary_cards"
                 ).fetchone()[0],
-                3,
+                4,
             )
         finally:
             connection.close()
@@ -280,7 +280,7 @@ class StudyApiTests(unittest.TestCase):
         first = self.client.get("/api/study/session", params={"limit": 10})
         self.assertEqual(first.status_code, 200, first.text)
         session = first.json()
-        self.assertEqual(len(session["cards"]), 5)
+        self.assertEqual(len(session["cards"]), 1)
         self.assertTrue(all(card["entry_id"] == entry_id for card in session["cards"]))
         self.assertTrue(
             all(
@@ -296,7 +296,8 @@ class StudyApiTests(unittest.TestCase):
             [card["card_id"] for card in session["cards"]],
         )
 
-        forward = next(card for card in session["cards"] if card["card_type"] == "forward")
+        forward = session["cards"][0]
+        self.assertEqual(forward["card_type"], "forward")
         attempt_id = str(uuid4())
         grade = self.client.post(
             f"/api/study/cards/{forward['card_id']}/grade",
@@ -326,9 +327,18 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(retry.json()["review_log_id"], result["review_log_id"])
         self.assertEqual(retry.json()["final_rating"], 1)
 
-        spelling = next(card for card in session["cards"] if card["card_type"] == "spelling")
+        with connect() as connection:
+            spelling_id = int(
+                connection.execute(
+                    """
+                    SELECT id FROM vocabulary_cards
+                    WHERE entry_id = ? AND card_type = 'spelling'
+                    """,
+                    (entry_id,),
+                ).fetchone()[0]
+            )
         conflict = self.client.post(
-            f"/api/study/cards/{spelling['card_id']}/grade",
+            f"/api/study/cards/{spelling_id}/grade",
             json={
                 "attempt_id": attempt_id,
                 "rating": 3,
@@ -339,7 +349,7 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(conflict.status_code, 409, conflict.text)
         self.assertEqual(conflict.json()["code"], "study_card_conflict")
         objective = self.client.post(
-            f"/api/study/cards/{spelling['card_id']}/grade",
+            f"/api/study/cards/{spelling_id}/grade",
             json={
                 "attempt_id": str(uuid4()),
                 "rating": 4,
@@ -351,14 +361,31 @@ class StudyApiTests(unittest.TestCase):
         self.assertFalse(objective.json()["auto_correct"])
         self.assertEqual(objective.json()["final_rating"], 4)
 
-        listening = next(card for card in session["cards"] if card["card_type"] == "listening")
+        with connect() as connection:
+            listening_id = int(
+                connection.execute(
+                    """
+                    SELECT id FROM vocabulary_cards
+                    WHERE entry_id = ? AND card_type = 'listening'
+                    """,
+                    (entry_id,),
+                ).fetchone()[0]
+            )
         suspended = self.client.post(
-            f"/api/study/cards/{listening['card_id']}/suspend"
+            f"/api/study/cards/{listening_id}/suspend"
         )
         self.assertEqual(suspended.status_code, 200, suspended.text)
-        remaining = self.client.get("/api/study/session").json()["cards"]
-        self.assertNotIn(listening["card_id"], [card["card_id"] for card in remaining])
-        self.assertTrue(any(card["card_type"] == "reverse" for card in remaining))
+        self.assertTrue(suspended.json()["card_type_suspended"])
+        blocked_grade = self.client.post(
+            f"/api/study/cards/{listening_id}/grade",
+            json={
+                "attempt_id": str(uuid4()),
+                "rating": 3,
+                "answer_given": "ability",
+                "duration_ms": 200,
+            },
+        )
+        self.assertEqual(blocked_grade.status_code, 409, blocked_grade.text)
 
         connection = connect()
         try:
@@ -371,7 +398,7 @@ class StudyApiTests(unittest.TestCase):
             )
             log = connection.execute(
                 "SELECT * FROM review_logs WHERE card_id = ?",
-                (spelling["card_id"],),
+                (spelling_id,),
             ).fetchone()
             self.assertEqual(log["auto_correct"], 0)
             self.assertEqual(log["auto_rating"], 1)
@@ -381,8 +408,8 @@ class StudyApiTests(unittest.TestCase):
 
         overview = self.client.get("/api/study/overview")
         self.assertEqual(overview.status_code, 200, overview.text)
-        self.assertEqual(overview.json()["today"]["new_done"], 2)
-        self.assertEqual(overview.json()["today"]["reviews_done"], 0)
+        self.assertEqual(overview.json()["today"]["new_done"], 1)
+        self.assertEqual(overview.json()["today"]["reviews_done"], 1)
         self.assertEqual(len(overview.json()["forecast_7d"]), 7)
 
     def test_unknown_api_path_is_json_404_not_spa_html(self) -> None:
@@ -403,20 +430,17 @@ class StudyApiTests(unittest.TestCase):
             json={
                 "daily_new": 2,
                 "daily_review_max": 5,
-                "enabled_card_types": ["forward", "spelling"],
+                "enabled_card_types": ["spelling"],
                 "leech_threshold": 3,
                 "backlog_mode": "spread",
             },
         )
         self.assertEqual(updated.status_code, 200, updated.text)
-        self.assertEqual(updated.json()["enabled_card_types"], ["forward", "spelling"])
+        self.assertEqual(updated.json()["enabled_card_types"], ["spelling"])
         session = self.client.get("/api/study/session", params={"limit": 20}).json()
         session_id = session["session_id"]
-        self.assertEqual(len(session["cards"]), 2)
-        self.assertEqual(
-            {card["card_type"] for card in session["cards"]},
-            {"forward", "spelling"},
-        )
+        self.assertEqual(len(session["cards"]), 1)
+        self.assertEqual(session["cards"][0]["card_type"], "spelling")
 
         backlog = self.client.post(
             "/api/study/backlog/plan",
@@ -475,8 +499,8 @@ class StudyApiTests(unittest.TestCase):
                 SELECT vc.id, ri.id AS review_item_id
                 FROM vocabulary_cards AS vc
                 JOIN review_items AS ri
-                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
-                WHERE vc.entry_id = ? AND vc.card_type = 'reverse'
+                  ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
+                WHERE vc.entry_id = ? AND vc.card_type = 'spelling'
                 """,
                 (entry_id,),
             ).fetchone()
@@ -498,9 +522,9 @@ class StudyApiTests(unittest.TestCase):
             connection.close()
 
         session = self.client.get("/api/study/session", params={"limit": 10}).json()
-        self.assertEqual(len(session["cards"]), 2)
+        self.assertEqual(len(session["cards"]), 1)
         self.assertEqual(session["cards"][0]["card_id"], due_card["id"])
-        self.assertEqual(session["cards"][0]["card_type"], "reverse")
+        self.assertEqual(session["cards"][0]["card_type"], "spelling")
         grade = self.client.post(
             f"/api/study/cards/{due_card['id']}/grade",
             json={
@@ -524,8 +548,21 @@ class StudyApiTests(unittest.TestCase):
     def test_spelling_variant_entry_state_and_manual_card_pause_are_independent(self) -> None:
         collected = self._collect("colour")
         entry_id = int(collected["entry"]["id"])
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE review_items
+                SET state = 'review', stability = 5, difficulty = 5,
+                    reps = 2, due_at = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (now, entry_id),
+            )
+            connection.commit()
         session = self.client.get("/api/study/session", params={"limit": 10}).json()
-        spelling = next(card for card in session["cards"] if card["card_type"] == "spelling")
+        spelling = session["cards"][0]
+        self.assertEqual(spelling["card_type"], "spelling")
         self.assertTrue({"colour", "color"} <= set(spelling["answer"]["accept"]))
         grade = self.client.post(
             f"/api/study/cards/{spelling['card_id']}/grade",
@@ -539,15 +576,43 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(grade.status_code, 200, grade.text)
         self.assertTrue(grade.json()["auto_correct"])
 
-        listening = next(card for card in session["cards"] if card["card_type"] == "listening")
-        self.client.post(f"/api/study/cards/{listening['card_id']}/suspend")
+        with connect() as connection:
+            cards = connection.execute(
+                """
+                SELECT id, card_type FROM vocabulary_cards
+                WHERE entry_id = ? AND card_type IN ('listening', 'reverse')
+                """,
+                (entry_id,),
+            ).fetchall()
+            by_type = {str(row["card_type"]): int(row["id"]) for row in cards}
+            connection.execute(
+                """
+                UPDATE review_items
+                SET state = 'learning', stability = 0.5, reps = 1, due_at = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (now, entry_id),
+            )
+            connection.execute(
+                "UPDATE study_sessions SET status = 'completed', completed_at = ? WHERE status = 'active'",
+                (now,),
+            )
+            connection.commit()
+        listening_id = by_type["listening"]
+        self.client.post(f"/api/study/cards/{listening_id}/suspend")
         paused = self.client.get("/api/study/session").json()
-        self.assertNotIn(listening["card_id"], [card["card_id"] for card in paused["cards"]])
-        self.client.post(f"/api/study/cards/{listening['card_id']}/unsuspend")
+        self.assertEqual(paused["cards"][0]["card_id"], by_type["reverse"])
+        self.client.post(f"/api/study/cards/{listening_id}/unsuspend")
+        with connect() as connection:
+            connection.execute(
+                "UPDATE study_sessions SET status = 'completed', completed_at = ? WHERE status = 'active'",
+                (now,),
+            )
+            connection.commit()
         restored = self.client.get("/api/study/session").json()
-        self.assertIn(listening["card_id"], [card["card_id"] for card in restored["cards"]])
+        self.assertEqual(restored["cards"][0]["card_id"], listening_id)
 
-        self.client.post(f"/api/study/cards/{listening['card_id']}/suspend")
+        self.client.post(f"/api/study/cards/{listening_id}/suspend")
         ignored = self.client.put(
             f"/api/vocabulary/entries/{entry_id}/state",
             json={"study_status": "ignored"},
@@ -561,19 +626,17 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(learning.status_code, 200, learning.text)
         resumed = self.client.get("/api/study/session").json()["cards"]
         self.assertTrue(resumed)
-        self.assertNotIn(listening["card_id"], [card["card_id"] for card in resumed])
-
-        from backend.app.database import connect
+        self.assertNotIn(listening_id, [card["card_id"] for card in resumed])
 
         connection = connect()
         try:
             suspended = connection.execute(
                 """
-                SELECT ri.manually_suspended
-                FROM review_items AS ri
-                WHERE ri.item_type = 'vocabulary_card' AND ri.ref_id = ?
+                SELECT manually_suspended
+                FROM vocabulary_card_type_settings
+                WHERE entry_id = ? AND card_type = 'listening'
                 """,
-                (listening["card_id"],),
+                (entry_id,),
             ).fetchone()[0]
             self.assertEqual(suspended, 1)
         finally:
@@ -581,7 +644,8 @@ class StudyApiTests(unittest.TestCase):
 
     def test_backlog_spread_adds_capacity_and_focus_only_serves_overdue(self) -> None:
         collected = self._collect()
-        entry_id = int(collected["entry"]["id"])
+        overdue_entry_id = int(collected["entry"]["id"])
+        due_today_entry_id = int(self._collect("colour")["entry"]["id"])
         local_now = datetime.now().astimezone()
         local_start = datetime.combine(
             local_now.date(),
@@ -590,29 +654,17 @@ class StudyApiTests(unittest.TestCase):
         )
         connection = connect()
         try:
-            cards = connection.execute(
-                """
-                SELECT vc.id, vc.card_type, ri.id AS review_item_id
-                FROM vocabulary_cards AS vc
-                JOIN review_items AS ri
-                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
-                WHERE vc.entry_id = ? AND vc.card_type IN ('forward', 'reverse')
-                ORDER BY vc.card_type
-                """,
-                (entry_id,),
-            ).fetchall()
-            by_type = {row["card_type"]: row for row in cards}
             connection.execute(
                 """
                 UPDATE review_items
                 SET state = 'review', due_at = ?, last_review_at = ?,
                     stability = 3, difficulty = 5, reps = 1
-                WHERE id = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
                 """,
                 (
                     (local_start - timedelta(days=2)).astimezone(timezone.utc).isoformat(),
                     (local_start - timedelta(days=5)).astimezone(timezone.utc).isoformat(),
-                    by_type["forward"]["review_item_id"],
+                    overdue_entry_id,
                 ),
             )
             connection.execute(
@@ -620,12 +672,12 @@ class StudyApiTests(unittest.TestCase):
                 UPDATE review_items
                 SET state = 'review', due_at = ?, last_review_at = ?,
                     stability = 3, difficulty = 5, reps = 1
-                WHERE id = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
                 """,
                 (
                     local_start.astimezone(timezone.utc).isoformat(),
                     (local_start - timedelta(days=3)).astimezone(timezone.utc).isoformat(),
-                    by_type["reverse"]["review_item_id"],
+                    due_today_entry_id,
                 ),
             )
             connection.commit()
@@ -646,7 +698,7 @@ class StudyApiTests(unittest.TestCase):
         self.assertEqual(spread.status_code, 200, spread.text)
         self.assertEqual(spread.json()["daily_extra_reviews"], 1)
         spread_cards = self.client.get("/api/study/session", params={"limit": 10}).json()["cards"]
-        self.assertEqual([card["card_type"] for card in spread_cards], ["forward"])
+        self.assertEqual([card["entry_id"] for card in spread_cards], [overdue_entry_id])
 
         connection = connect()
         try:
@@ -664,7 +716,7 @@ class StudyApiTests(unittest.TestCase):
         )
         self.assertEqual(focus.status_code, 200, focus.text)
         focus_cards = self.client.get("/api/study/session", params={"limit": 10}).json()["cards"]
-        self.assertEqual([card["card_type"] for card in focus_cards], ["forward"])
+        self.assertEqual([card["entry_id"] for card in focus_cards], [overdue_entry_id])
 
     def test_sprint_directly_generates_cards_for_an_unactivated_wordbook(self) -> None:
         from backend.app.services.dictionary import lookup_dictionary
@@ -786,41 +838,48 @@ class StudyApiTests(unittest.TestCase):
         finally:
             connection.close()
 
-        session = self.client.get("/api/study/session", params={"limit": 20}).json()
-        cards = {card["card_type"]: card for card in session["cards"]}
-        self.assertEqual(
-            set(cards),
-            {"forward", "reverse", "listening", "spelling", "cloze", "collocation"},
-        )
+        def surface(state: str, reps: int, stability: float) -> dict:
+            timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+            with connect() as connection:
+                connection.execute(
+                    """
+                    UPDATE review_items
+                    SET state = ?, reps = ?, stability = ?, difficulty = 5, due_at = ?
+                    WHERE item_type = 'vocabulary' AND ref_id = ?
+                    """,
+                    (state, reps, stability, timestamp, entry_id),
+                )
+                connection.execute(
+                    "UPDATE study_sessions SET status = 'completed', completed_at = ? WHERE status = 'active'",
+                    (timestamp,),
+                )
+                connection.commit()
+            session = self.client.get("/api/study/session", params={"limit": 20}).json()
+            self.assertEqual(len(session["cards"]), 1)
+            return session["cards"][0]
+
+        cards = {
+            "forward": surface("new", 0, 0),
+            "reverse": surface("learning", 2, 0.5),
+            "listening": surface("learning", 1, 0.5),
+            "spelling": surface("review", 2, 5),
+            "cloze": surface("review", 3, 5),
+            "collocation": surface("review", 5, 5),
+        }
+        self.assertEqual({card["card_type"] for card in cards.values()}, set(cards))
+        self.assertEqual(len({card["review_item_id"] for card in cards.values()}), 1)
         reverse = cards["reverse"]
         self.assertEqual(len(reverse["answer"]["distractors"]), 3)
         self.assertEqual(len(set(reverse["answer"]["distractors"])), 3)
-        self.assertNotIn(
-            "ability",
-            {choice.casefold() for choice in reverse["answer"]["distractors"]},
-        )
-
-        wrong_choice = self.client.post(
-            f"/api/study/cards/{reverse['card_id']}/grade",
-            json={
-                "attempt_id": str(uuid4()),
-                "rating": 3,
-                "answer_given": reverse["answer"]["distractors"][0],
-                "duration_ms": 100,
-            },
-        )
-        self.assertEqual(wrong_choice.status_code, 200, wrong_choice.text)
-        self.assertFalse(wrong_choice.json()["auto_correct"])
 
         answers = {
+            "reverse": reverse["answer"]["distractors"][0],
             "listening": "ability",
             "spelling": "ability",
             "cloze": "ability",
             "collocation": "ability to",
         }
         for card_type, card in cards.items():
-            if card_type == "reverse":
-                continue
             body = {
                 "attempt_id": str(uuid4()),
                 "rating": 3,
@@ -835,6 +894,8 @@ class StudyApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             if card_type == "forward":
                 self.assertIsNone(response.json()["auto_correct"])
+            elif card_type == "reverse":
+                self.assertFalse(response.json()["auto_correct"])
             else:
                 self.assertTrue(response.json()["auto_correct"])
 
@@ -842,7 +903,7 @@ class StudyApiTests(unittest.TestCase):
         try:
             rows = connection.execute(
                 """
-                SELECT DISTINCT vc.card_type
+                SELECT DISTINCT vc.card_type, rl.review_item_id
                 FROM review_logs AS rl
                 JOIN vocabulary_cards AS vc ON vc.id = rl.card_id
                 WHERE vc.entry_id = ?
@@ -850,6 +911,17 @@ class StudyApiTests(unittest.TestCase):
                 (entry_id,),
             ).fetchall()
             self.assertEqual({row["card_type"] for row in rows}, set(cards))
+            self.assertEqual(len({row["review_item_id"] for row in rows}), 1)
+            self.assertEqual(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM review_items
+                    WHERE item_type = 'vocabulary' AND ref_id = ? AND archived_at IS NULL
+                    """,
+                    (entry_id,),
+                ).fetchone()[0],
+                1,
+            )
         finally:
             connection.close()
 
@@ -909,7 +981,11 @@ class LegacyVocabularyReviewCompatibilityTests(unittest.TestCase):
                 ).fetchone()[0]
             )
             due_before = connection.execute(
-                "SELECT due_at FROM review_items WHERE ref_id = ?", (card_id,)
+                """
+                SELECT due_at FROM review_items
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (entry_id,),
             ).fetchone()[0]
         finally:
             connection.close()
@@ -927,7 +1003,11 @@ class LegacyVocabularyReviewCompatibilityTests(unittest.TestCase):
         connection = connect()
         try:
             item = connection.execute(
-                "SELECT * FROM review_items WHERE ref_id = ?", (card_id,)
+                """
+                SELECT * FROM review_items
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (entry_id,),
             ).fetchone()
             self.assertNotEqual(item["due_at"], due_before)
             # 0002 conservatively seeds a reviewed legacy card with reps=1;
@@ -992,7 +1072,7 @@ class LegacyFixtureReviewCompatibilityTests(unittest.TestCase):
                 SELECT vc.id, ri.due_at
                 FROM vocabulary_cards AS vc
                 JOIN review_items AS ri
-                  ON ri.item_type = 'vocabulary_card' AND ri.ref_id = vc.id
+                  ON ri.item_type = 'vocabulary' AND ri.ref_id = vc.entry_id
                 WHERE vc.entry_id = ? AND vc.card_type = 'forward'
                 """,
                 (entry_id,),
@@ -1012,7 +1092,11 @@ class LegacyFixtureReviewCompatibilityTests(unittest.TestCase):
         connection = connect()
         try:
             item = connection.execute(
-                "SELECT due_at FROM review_items WHERE ref_id = ?", (card_id,)
+                """
+                SELECT due_at FROM review_items
+                WHERE item_type = 'vocabulary' AND ref_id = ?
+                """,
+                (entry_id,),
             ).fetchone()
             self.assertNotEqual(item["due_at"], due_before)
             log = connection.execute(

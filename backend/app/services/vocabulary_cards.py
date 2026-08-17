@@ -36,16 +36,16 @@ def _json(value: Any) -> str:
 
 def _ensure_review_item(
     connection: sqlite3.Connection,
-    card_id: int,
+    entry_id: int,
     *,
     timestamp: str,
 ) -> int:
     row = connection.execute(
         """
         SELECT id FROM review_items
-        WHERE item_type = 'vocabulary_card' AND ref_id = ?
+        WHERE item_type = 'vocabulary' AND ref_id = ? AND archived_at IS NULL
         """,
-        (card_id,),
+        (entry_id,),
     ).fetchone()
     if row is not None:
         return int(row["id"])
@@ -55,12 +55,12 @@ def _ensure_review_item(
             uuid, item_type, ref_id, state, step, due_at,
             stability, difficulty, scheduled_days, elapsed_days, reps, lapses,
             manually_suspended, scheduler, scheduler_version, created_at, updated_at
-        ) VALUES (?, 'vocabulary_card', ?, 'new', 0, ?, 0, 0, 0, 0, 0, 0,
+        ) VALUES (?, 'vocabulary', ?, 'new', 0, ?, 0, 0, 0, 0, 0, 0,
                   0, ?, ?, ?, ?)
         """,
         (
             str(uuid4()),
-            card_id,
+            entry_id,
             timestamp,
             SCHEDULER_NAME,
             SCHEDULER_VERSION,
@@ -125,7 +125,15 @@ def _ensure_card(
                 """,
                 (prompt_data, answer_data, generation_source, timestamp, card_id),
             )
-    review_item_id = _ensure_review_item(connection, card_id, timestamp=timestamp)
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO vocabulary_card_type_settings(
+            entry_id, card_type, manually_suspended, created_at, updated_at
+        ) VALUES (?, ?, 0, ?, ?)
+        """,
+        (entry_id, card_type, timestamp, timestamp),
+    )
+    review_item_id = _ensure_review_item(connection, entry_id, timestamp=timestamp)
     return {
         "card_id": card_id,
         "card_type": card_type,

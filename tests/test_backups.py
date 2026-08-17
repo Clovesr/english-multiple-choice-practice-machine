@@ -274,9 +274,8 @@ class BackupApiTests(unittest.TestCase):
                 """
                 SELECT ri.id
                 FROM review_items ri
-                JOIN vocabulary_cards vc ON vc.id = ri.ref_id
-                JOIN vocabulary_entries ve ON ve.id = vc.entry_id
-                WHERE ri.item_type = 'vocabulary_card'
+                JOIN vocabulary_entries ve ON ve.id = ri.ref_id
+                WHERE ri.item_type = 'vocabulary' AND ri.archived_at IS NULL
                   AND ve.normalized_term = 'original'
                 """
             ).fetchone()

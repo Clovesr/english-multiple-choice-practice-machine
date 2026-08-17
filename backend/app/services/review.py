@@ -213,7 +213,7 @@ def get_review_queue(
         connection.execute(
             """
             SELECT COUNT(*) FROM review_items
-            WHERE item_type = 'vocabulary_card'
+            WHERE item_type = 'vocabulary' AND archived_at IS NULL
               AND manually_suspended = 0 AND due_at <= ?
             """,
             (now,),
@@ -410,7 +410,7 @@ def get_review_stats(connection: sqlite3.Connection) -> dict[str, Any]:
             connection.execute(
                 """
                 SELECT COUNT(*) FROM review_items
-                WHERE manually_suspended = 0 AND due_at <= ?
+                WHERE manually_suspended = 0 AND archived_at IS NULL AND due_at <= ?
                 """,
                 (now_iso,),
             ).fetchone()[0]
@@ -419,7 +419,7 @@ def get_review_stats(connection: sqlite3.Connection) -> dict[str, Any]:
             connection.execute(
                 """
                 SELECT COUNT(*) FROM review_items
-                WHERE manually_suspended = 0 AND due_at < ?
+                WHERE manually_suspended = 0 AND archived_at IS NULL AND due_at < ?
                 """,
                 (day_start,),
             ).fetchone()[0]
@@ -428,7 +428,8 @@ def get_review_stats(connection: sqlite3.Connection) -> dict[str, Any]:
             connection.execute(
                 """
                 SELECT COUNT(*) FROM review_items
-                WHERE manually_suspended = 0 AND state = 'new' AND due_at <= ?
+                WHERE manually_suspended = 0 AND archived_at IS NULL
+                  AND state = 'new' AND due_at <= ?
                 """,
                 (now_iso,),
             ).fetchone()[0]

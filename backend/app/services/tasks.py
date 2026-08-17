@@ -121,7 +121,7 @@ def generate_daily_tasks(
         connection.execute(
             """
             SELECT COUNT(*) FROM review_items
-            WHERE manually_suspended = 0 AND due_at <= ?
+            WHERE manually_suspended = 0 AND archived_at IS NULL AND due_at <= ?
             """,
             (created_at,),
         ).fetchone()[0]

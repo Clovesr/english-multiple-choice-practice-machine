@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from uuid import uuid4
 
 from backend.app.database import SCHEMA
 from backend.app.migrations import MIGRATIONS
@@ -52,6 +53,7 @@ class VersionedMigrationTests(unittest.TestCase):
                     (3, "courses_and_skills"),
                     (4, "tasks_events_and_mastery"),
                     (5, "backup_catalog"),
+                    (6, "word_level_vocabulary_scheduling"),
                 ],
             )
             self.assertTrue(all(len(row["checksum"]) == 64 for row in migrations))
@@ -120,7 +122,7 @@ class VersionedMigrationTests(unittest.TestCase):
         with connect() as connection:
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                5,
+                6,
             )
             self.assertEqual(pending_migrations(connection, MIGRATIONS), ())
 
@@ -239,9 +241,9 @@ class VersionedMigrationTests(unittest.TestCase):
             item = connection.execute(
                 """
                 SELECT * FROM review_items
-                WHERE item_type = 'vocabulary_card' AND ref_id = ?
+                WHERE item_type = 'vocabulary' AND ref_id = ?
                 """,
-                (card["id"],),
+                (entry_id,),
             ).fetchone()
             self.assertEqual(item["state"], "review")
             self.assertEqual(item["last_review_at"], "2026-08-10T00:00:00+00:00")
@@ -269,8 +271,8 @@ class VersionedMigrationTests(unittest.TestCase):
                 (new_entry_id,),
             ).fetchone()
             new_item = connection.execute(
-                "SELECT * FROM review_items WHERE ref_id = ?",
-                (new_card["id"],),
+                "SELECT * FROM review_items WHERE item_type = 'vocabulary' AND ref_id = ?",
+                (new_entry_id,),
             ).fetchone()
             self.assertEqual(new_item["state"], "new")
             self.assertIsNone(new_item["last_review_at"])
@@ -301,7 +303,7 @@ class VersionedMigrationTests(unittest.TestCase):
             self.assertIsNone(
                 connection.execute(
                     "SELECT 1 FROM review_items WHERE ref_id = ?",
-                    (migrated_card_id,),
+                    (entry_id,),
                 ).fetchone()
             )
 
@@ -322,9 +324,173 @@ class VersionedMigrationTests(unittest.TestCase):
         self.assertIsNone(connection.row_factory)
         self.assertEqual(
             connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-            5,
+            6,
         )
         connection.close()
+
+    def test_0006_merges_by_reps_then_due_and_preserves_logs_idempotently(self) -> None:
+        from backend.app.database import connect, initialize_database
+        from backend.app.migrations.v0006_word_level_scheduling import apply as apply_0006
+
+        initialize_database()
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        with connect() as connection:
+            entry_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO vocabulary_entries(
+                        uuid, term, normalized_term, lemma, common_meaning,
+                        translation_status, enrichment_status, encounter_count,
+                        study_status, created_at, updated_at, last_seen_at
+                    ) VALUES (?, 'mergeword', 'mergeword', 'mergeword', '合并词',
+                              'ready', 'ready', 1, 'learning', ?, ?, ?)
+                    """,
+                    (str(uuid4()), now, now, now),
+                ).lastrowid
+            )
+            card_ids: list[int] = []
+            item_ids: list[int] = []
+            for index, (card_type, reps, due_at, suspended) in enumerate(
+                (
+                    ("forward", 3, "2026-08-20T00:00:00+00:00", 1),
+                    ("reverse", 3, "2026-08-18T00:00:00+00:00", 0),
+                    ("spelling", 2, "2026-08-17T00:00:00+00:00", 0),
+                ),
+                start=1,
+            ):
+                card_id = int(
+                    connection.execute(
+                        """
+                        INSERT INTO vocabulary_cards(
+                            uuid, entry_id, card_type, variant_key,
+                            prompt_data, answer_data, created_at, updated_at
+                        ) VALUES (?, ?, ?, 'primary', '{}', '{}', ?, ?)
+                        """,
+                        (str(uuid4()), entry_id, card_type, now, now),
+                    ).lastrowid
+                )
+                item_id = int(
+                    connection.execute(
+                        """
+                        INSERT INTO review_items(
+                            uuid, item_type, ref_id, state, due_at, reps,
+                            manually_suspended, scheduler_version,
+                            created_at, updated_at
+                        ) VALUES (?, 'vocabulary_card', ?, 'review', ?, ?, ?,
+                                  'legacy-card-v1', ?, ?)
+                        """,
+                        (str(uuid4()), card_id, due_at, reps, suspended, now, now),
+                    ).lastrowid
+                )
+                connection.execute(
+                    """
+                    INSERT INTO review_logs(
+                        uuid, attempt_id, review_item_id, card_id, final_rating,
+                        state_before, state_after, step_before, step_after,
+                        due_before, due_after, stability_before, stability_after,
+                        difficulty_before, difficulty_after, reviewed_at
+                    ) VALUES (?, ?, ?, ?, 3, 'review', 'review', 0, 0,
+                              ?, ?, 2, 3, 5, 5, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        str(uuid4()),
+                        item_id,
+                        card_id,
+                        due_at,
+                        due_at,
+                        now,
+                    ),
+                )
+                card_ids.append(card_id)
+                item_ids.append(item_id)
+            session_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO study_sessions(
+                        uuid, status, card_limit, started_at, last_accessed_at
+                    ) VALUES (?, 'active', 3, ?, ?)
+                    """,
+                    (str(uuid4()), now, now),
+                ).lastrowid
+            )
+            connection.execute(
+                """
+                INSERT INTO study_session_cards(session_id, card_id, sequence, bucket)
+                VALUES (?, ?, 1, 'due')
+                """,
+                (session_id, card_ids[0]),
+            )
+            connection.commit()
+            logs_before = [
+                tuple(row)
+                for row in connection.execute(
+                    "SELECT * FROM review_logs ORDER BY id"
+                ).fetchall()
+            ]
+
+            apply_0006(connection)
+            connection.commit()
+            apply_0006(connection)
+            connection.commit()
+
+            winner = connection.execute(
+                """
+                SELECT * FROM review_items
+                WHERE item_type = 'vocabulary' AND ref_id = ? AND archived_at IS NULL
+                """,
+                (entry_id,),
+            ).fetchone()
+            self.assertEqual(int(winner["id"]), item_ids[1])
+            self.assertEqual(int(winner["reps"]), 3)
+            self.assertEqual(winner["due_at"], "2026-08-18T00:00:00+00:00")
+            archived = connection.execute(
+                """
+                SELECT id, archived_at, archive_reason FROM review_items
+                WHERE id IN (?, ?) ORDER BY id
+                """,
+                (item_ids[0], item_ids[2]),
+            ).fetchall()
+            self.assertTrue(all(row["archived_at"] for row in archived))
+            self.assertTrue(all(str(item_ids[1]) in row["archive_reason"] for row in archived))
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM review_logs").fetchone()[0],
+                3,
+            )
+            self.assertEqual(
+                [
+                    tuple(row)
+                    for row in connection.execute(
+                        "SELECT * FROM review_logs ORDER BY id"
+                    ).fetchall()
+                ],
+                logs_before,
+            )
+            self.assertEqual(
+                {
+                    int(row["review_item_id"])
+                    for row in connection.execute(
+                        "SELECT review_item_id FROM review_logs"
+                    ).fetchall()
+                },
+                set(item_ids),
+            )
+            self.assertEqual(
+                connection.execute(
+                    """
+                    SELECT manually_suspended FROM vocabulary_card_type_settings
+                    WHERE entry_id = ? AND card_type = 'forward'
+                    """,
+                    (entry_id,),
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT status FROM study_sessions WHERE id = ?", (session_id,)
+                ).fetchone()[0],
+                "completed",
+            )
 
     def test_existing_database_is_backed_up_before_migration(self) -> None:
         legacy = sqlite3.connect(self.database_path)
