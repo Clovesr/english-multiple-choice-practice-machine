@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Check, RefreshCw, Search, Settings, Star, Trash2 } from 'lucide-vue-next'
+import { AlarmClock, BookMarked, BookOpen, Check, Info, Layers, Loader2, RefreshCw, Search, Settings, Star, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { del, get, post, put } from '../api'
@@ -12,6 +12,20 @@ const overview = ref<any>(null)
 
 async function loadOverview() {
   try { overview.value = await get('/study/overview') } catch { /* 统计失败不阻塞单词本 */ }
+}
+
+// 性能：6163 词条不能全量渲染 DOM，窗口化分批显示（服务端分页已向 Codex 排期）
+const PAGE_SIZE = 120
+const visibleCount = ref(PAGE_SIZE)
+const visibleItems = computed(() => items.value.slice(0, visibleCount.value))
+
+function extendVisible() {
+  if (visibleCount.value < items.value.length) visibleCount.value += PAGE_SIZE
+}
+
+function onListScroll(event: Event) {
+  const el = event.target as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 400) extendVisible()
 }
 const selected = ref<any>(null)
 const filter = ref('all')
@@ -70,6 +84,7 @@ async function load() {
     error.value = ''
     items.value = result.items || []
     counts.value = result.counts || counts.value
+    visibleCount.value = PAGE_SIZE
     const requested = Number(route.query.word)
     const target = items.value.find(item => item.id === requested) || items.value[0]
     if (target) await select(target.id)
@@ -155,14 +170,15 @@ onMounted(() => { void load(); void loadOverview() })
     <div v-if="error" class="warning">{{ error }}</div>
     <div v-if="notice" class="card vocab-notice">{{ notice }}</div>
     <div class="vocab-stats">
-      <button class="card" @click="filter='all'"><span>词条总数（含词书）</span><strong>{{ counts.total || 0 }}</strong></button>
-      <button class="card amber" @click="filter='frequent'"><span>🌟 高频生词</span><strong>{{ counts.frequent || 0 }}</strong></button>
-      <RouterLink class="card" to="/study" style="text-align:inherit"><span>到期复习（记忆算法）</span><strong>{{ overview?.today ? overview.today.due_left : '—' }}</strong></RouterLink>
-      <button class="card" @click="filter='mastered'"><span>已掌握</span><strong>{{ counts.mastered || 0 }}</strong></button>
-      <button class="card" @click="filter='pending'"><span>等待翻译</span><strong>{{ counts.pending || 0 }}</strong></button>
+      <button class="card" @click="filter='all'"><span><Layers :size="14" />词条总数（含词书）</span><strong>{{ counts.total || 0 }}</strong></button>
+      <button class="card amber" @click="filter='frequent'"><span><Star :size="14" />高频生词</span><strong>{{ counts.frequent || 0 }}</strong></button>
+      <RouterLink class="card accent" to="/study"><span><AlarmClock :size="14" />到期复习</span><strong>{{ overview?.today ? overview.today.due_left : '—' }}</strong></RouterLink>
+      <button class="card" @click="filter='mastered'"><span><Check :size="14" />已掌握</span><strong>{{ counts.mastered || 0 }}</strong></button>
+      <button class="card" @click="filter='pending'"><span><RefreshCw :size="14" />等待翻译</span><strong>{{ counts.pending || 0 }}</strong></button>
     </div>
-    <div class="card" style="margin-bottom:16px;padding:12px 16px;font-size:13px;color:var(--muted)">
-      词条总数里包含词书计划灌入的词典词条（列表中标有「词书」）。你亲手收藏、练习中遇到的词才是本页的主角；"只看我收藏的"筛选即将上线。复习统一由记忆算法安排，入口在右上角。
+    <div class="vocab-hint">
+      <Info :size="16" />
+      <span>词条总数里包含词书计划的词典词条（标有「词书」）。你亲手收藏、练习遇到的词才是生词本的主角；"只看我收藏的"筛选即将上线。到期复习统一由记忆算法安排。</span>
     </div>
 
     <section v-if="reviewMode" class="review-overlay">
@@ -197,16 +213,21 @@ onMounted(() => { void load(); void loadOverview() })
         ]" :key="item[0]" :class="{active:filter===item[0]}" @click="filter=item[0]">{{ item[1] }}</button>
       </aside>
 
-      <section class="vocab-list card">
-        <button v-for="word in items" :key="word.id" class="vocab-list-item" :class="{active:selected?.id===word.id}" @click="select(word.id)">
+      <section class="vocab-list card" @scroll.passive="onListScroll">
+        <button v-for="word in visibleItems" :key="word.id" class="vocab-list-item" :class="{active:selected?.id===word.id}" @click="select(word.id)">
           <div class="vocab-list-head"><strong><span v-if="word.is_frequent">🌟 </span>{{ word.lemma || word.term }}</strong>
-            <small v-if="word.source_kind === 'builtin_wordbook' && !word.encounter_count" class="pill" style="font-size:10px;padding:2px 7px">词书</small>
+            <small v-if="word.source_kind === 'builtin_wordbook' && !word.encounter_count" class="vocab-badge">词书</small>
             <small v-else>遇到 {{ word.encounter_count }} 次</small>
           </div>
           <p v-if="word.translation_status==='ready'">{{ word.common_meaning || word.contextual_meaning }}</p>
           <p v-else class="pending-text">{{ translationStatusText(word.translation_status) }}</p>
           <div class="vocab-list-meta"><span>{{ word.part_of_speech }}</span><span>{{ word.study_status === 'mastered' ? '已掌握' : '学习中' }}</span></div>
         </button>
+        <div v-if="visibleCount < items.length" class="vocab-load-more">
+          <Loader2 :size="15" class="spinning" />
+          <span>已显示 {{ visibleItems.length }} / {{ items.length }}，下拉继续加载</span>
+          <button class="button ghost compact" type="button" @click="extendVisible">加载更多</button>
+        </div>
         <div v-if="!items.length" class="empty">这里还没有符合条件的单词。</div>
       </section>
 
