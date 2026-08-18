@@ -254,13 +254,6 @@ onMounted(async () => {
       <StudyCardView :card="current.card" :drill="current.drill" :can-defer="queue.length > 1" :speech-available="speechAvailable" @grade="onGrade" @skip="onSkip" @defer="onDefer" />
     </template>
 
-<style scoped>
-.session-progress { max-width: 680px; margin: 0 auto 10px; display: flex; align-items: center; gap: 12px; }
-.session-progress-bar { flex: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.session-progress-bar div { height: 100%; background: var(--primary); transition: width .25s ease; }
-.session-progress small { color: var(--muted); font-size: 12px; white-space: nowrap; }
-</style>
-
     <div v-else class="card empty">
       <PartyPopper :size="26" style="color:var(--primary)" />
       <strong v-if="consolidating">巩固完成，今天的 {{ completedToday.length }} 个词都过了第二遍</strong>
@@ -278,3 +271,10 @@ onMounted(async () => {
   </div>
 </template>
 
+
+<style scoped>
+.session-progress { max-width: 680px; margin: 0 auto 10px; display: flex; align-items: center; gap: 12px; }
+.session-progress-bar { flex: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.session-progress-bar div { height: 100%; background: var(--primary); transition: width .25s ease; }
+.session-progress small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+</style>

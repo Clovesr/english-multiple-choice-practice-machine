@@ -188,12 +188,12 @@ onMounted(load)
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="button" type="button" :disabled="importing" @click="pickFile">
-          <Loader2 v-if="importing" :size="16" class="spinning" /><FileUp v-else :size="16" />上传 TXT / Markdown
+          <Loader2 v-if="importing" :size="16" class="spinning" /><FileUp v-else :size="16" />导入文档
         </button>
         <button class="button secondary" type="button" @click="showPaste = !showPaste">
           <ClipboardPaste :size="16" />粘贴文本
         </button>
-        <input ref="fileInput" type="file" accept=".txt,.md,.markdown" style="display:none" @change="onFileChosen" />
+        <input ref="fileInput" type="file" accept=".txt,.md,.markdown,.pdf,.docx" style="display:none" @change="onFileChosen" />
       </div>
     </div>
 
@@ -315,7 +315,7 @@ onMounted(load)
 
     <div v-else-if="!loading" class="card empty">
       <strong>资源库还是空的</strong>
-      <p>点右上角"上传 TXT / Markdown"导入第一篇文章，或用"粘贴文本"快速保存一段笔记。导入后即可阅读、划词收藏并进入复习。</p>
+      <p>点右上角"导入文档"（TXT / Markdown / PDF / DOCX）导入第一篇文章，或用"粘贴文本"快速保存一段笔记。导入后即可阅读、划词收藏并进入复习。</p>
       <p style="font-size:12px">试试仓库里的示例：test-fixtures/sample-article.txt</p>
     </div>
   </div>
