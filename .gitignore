@@ -12,6 +12,7 @@ frontend/dist/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+src-tauri/target/
 
 # Local runtime data and private development artifacts
 backend/data/

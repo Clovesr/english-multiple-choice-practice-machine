@@ -1,0 +1,15 @@
+[package]
+name = "wenqu-tauri-poc"
+version = "0.1.0"
+description = "Tauri 2 sidecar lifecycle proof of concept for Wenqu"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+uuid = { version = "1", features = ["v4"] }
