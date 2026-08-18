@@ -6,9 +6,11 @@ import hmac
 import json
 import os
 import socket
+import sys
 import threading
 from collections.abc import Callable
 from http.cookies import SimpleCookie
+from typing import BinaryIO
 from urllib.parse import parse_qs, urlsplit
 
 import uvicorn
@@ -18,6 +20,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 TOKEN_ENV = "WENQU_DESKTOP_TOKEN"
+PARENT_PIPE_ENV = "WENQU_DESKTOP_PARENT_PIPE"
 TOKEN_COOKIE = "wenqu_desktop_token"
 TOKEN_HEADER = b"x-wenqu-desktop-token"
 
@@ -155,6 +158,20 @@ def _bound_loopback_socket() -> socket.socket:
     return server_socket
 
 
+def _observe_parent_pipe(
+    shutdown_requested: threading.Event,
+    stream: BinaryIO | None = None,
+) -> None:
+    """Stop the sidecar when its owning desktop process closes the stdin pipe."""
+
+    parent_pipe = stream if stream is not None else sys.stdin.buffer
+    try:
+        while parent_pipe.read(4096):
+            pass
+    finally:
+        shutdown_requested.set()
+
+
 def run_sidecar(token: str) -> None:
     from backend.app.main import app
 
@@ -186,6 +203,13 @@ def run_sidecar(token: str) -> None:
         name="desktop-sidecar-shutdown",
         daemon=True,
     ).start()
+    if os.environ.get(PARENT_PIPE_ENV) == "1":
+        threading.Thread(
+            target=_observe_parent_pipe,
+            args=(shutdown_requested,),
+            name="desktop-parent-pipe",
+            daemon=True,
+        ).start()
     print(
         json.dumps(
             {"event": "sidecar_ready", "pid": os.getpid(), "port": port},

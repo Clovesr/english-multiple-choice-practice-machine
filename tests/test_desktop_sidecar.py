@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from io import BytesIO
+import threading
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.desktop_sidecar import create_desktop_app
+from backend.app.desktop_sidecar import _observe_parent_pipe, create_desktop_app
 
 
 TOKEN = "0123456789abcdef0123456789abcdef"
@@ -118,3 +121,11 @@ def test_desktop_boundary_rejects_weak_tokens_and_non_loopback_origins(
             origin=origin,
             request_shutdown=lambda: None,
         )
+
+
+def test_parent_pipe_eof_requests_sidecar_shutdown() -> None:
+    shutdown_requested = threading.Event()
+
+    _observe_parent_pipe(shutdown_requested, BytesIO(b"parent-owned-pipe"))
+
+    assert shutdown_requested.is_set()
