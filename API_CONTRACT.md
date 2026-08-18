@@ -1,5 +1,7 @@
 # API_CONTRACT — 接口契约（唯一事实来源）
 
+> 本文件是**实现合同**，服从 docs/SPEC_V2.md（唯一功能范围来源）；条目应引用功能编号（如 VOC-19）。进度见 docs/FEATURE_STATUS.md。
+
 > 五份契约文档之一。规则：**先改本文件，双方确认，再写代码**。后端（Codex）按此实现 `backend/app/routers/`，前端（Claude）按此实现 `frontend/src/api.ts`。已有接口（docs/AUDIT.md §3）保持不变，本文件只记录新增与变更。
 
 ## 1. 通用约定（规划书 C.2）
