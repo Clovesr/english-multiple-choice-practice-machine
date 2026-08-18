@@ -1,6 +1,6 @@
 # ACT_MODEL_DRAFT — 统一活动、尝试、响应与学习事件模型草案
 
-> 状态：研究冻结候选 v0.1，待 Codex × Claude 双签后并入 `DATA_MODEL.md` / `API_CONTRACT.md`。
+> 状态：研究冻结 v0.1；Codex 与 Claude 已在 handoff 035/038/039 双签。后续实现仍须先并入 `DATA_MODEL.md` / `API_CONTRACT.md`。
 > 本文只冻结边界与迁移方向，不授权建表或改接口；功能范围以 `docs/SPEC_V2.md` 为准。
 > 覆盖核心约束：ACT-01/03/05/06/07/11/19/21/22/23/26；遵守 D-02，现有刷题机继续作为考试内核。
 
@@ -216,6 +216,8 @@ active --autosave--> active --submit--> submitted --score--> scored
 1. 表名采用 030 与本批次约定的通用名 `attempts/responses`。两表都通过外键绑定活动版本，当前仓库无同名表；若实施前出现真实命名碰撞，再走 DATA_MODEL 提案变更，研究冻结阶段不预防性改名。
 2. `response_events` 默认只保存 hash、长度、修订号和差异元数据；离散短答案可由活动策略显式保存完整值，作文/录音只保存版本或资产引用。`responses.submitted_json` 始终保留锁定时的完整提交快照，不能因历史策略而只剩 hash。
 3. 影子差异的聚合健康状态归 APP-05；APP-12 诊断包只导出脱敏明细。两者共享同一 outbox/差异事实，不建立两套状态源。
+4. 草稿冲突策略进入 `renderer_contract_json.conflict_policy`，只允许合同定义的受控枚举；409 必须返回服务器 revision、可恢复草稿和允许的处置动作。任何渲染器都不得静默使用 last-write-wins 覆盖另一份草稿。
+5. 拼写、填空等有长度上限且经活动策略判定为低敏感的离散短答案，`response_events` 默认可保存完整值，以支持 ACT-25 尝试历史；仍须执行长度上限、敏感字段排除和本地隐私设置。作文、录音和其他长内容继续只保存版本、hash 或资产引用。
 
 ## 9. 明确非目标与生效条件
 
