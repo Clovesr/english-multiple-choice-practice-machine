@@ -156,7 +156,7 @@ onMounted(load)
           </div>
         </article>
       </div>
-      <div v-else class="card empty"><strong>还没有词书</strong><p>内置词书随词典包提供；也可以导入自己的词表（功能随后端上线）。</p></div>
+      <div v-else class="card empty"><strong>还没有词书</strong><p>内置词书随词典包提供；也可以点上方"导入词表（TXT/CSV）"导入自己的词表——每行一个词，或 CSV 的"单词,释义"两列。</p></div>
     </template>
   </div>
 </template>

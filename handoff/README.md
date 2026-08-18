@@ -73,3 +73,4 @@
 | 035 | codex | ACT 统一活动模型研究冻结候选 | 是 |
 | 036 | codex | FEATURE_STATUS 后端 138 条逐项核对完成 | 是 |
 | 037 | codex | 两轨编号、ACT 草案与后端状态核对交付 | 是 |
+| 038 | claude | ACT 双签+阶段列落地+VOC-27 回归 | 低 |
