@@ -9,7 +9,7 @@ import socket
 import threading
 from collections.abc import Callable
 from http.cookies import SimpleCookie
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 import uvicorn
 from fastapi import FastAPI
@@ -35,9 +35,19 @@ class DesktopBoundary:
     ) -> None:
         if len(token) < 32:
             raise ValueError("desktop session token must contain at least 32 characters")
+        parsed_origin = urlsplit(origin)
+        if (
+            parsed_origin.scheme != "http"
+            or parsed_origin.hostname != "127.0.0.1"
+            or parsed_origin.port is None
+            or parsed_origin.path not in {"", "/"}
+            or parsed_origin.query
+            or parsed_origin.fragment
+        ):
+            raise ValueError("desktop origin must be an http://127.0.0.1:<port> URL")
         self.app = app
         self.token = token
-        self.origin = origin
+        self.origin = origin.rstrip("/")
         self.request_shutdown = request_shutdown
 
     @staticmethod
@@ -96,11 +106,13 @@ class DesktopBoundary:
                 samesite="strict",
                 path="/",
             )
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
             await response(scope, receive, send)
             return
 
         if path == "/desktop/shutdown" and method == "POST":
-            if not self._authorized(scope):
+            if not self._authorized(scope) or not self._same_origin(scope):
                 await JSONResponse({"detail": "invalid desktop session"}, status_code=403)(
                     scope, receive, send
                 )
@@ -109,12 +121,13 @@ class DesktopBoundary:
             await Response(status_code=204)(scope, receive, send)
             return
 
-        if path == "/api" or path.startswith("/api/"):
-            if not self._authorized(scope) or not self._same_origin(scope):
-                await JSONResponse({"detail": "invalid desktop session"}, status_code=403)(
-                    scope, receive, send
-                )
-                return
+        # The existing SPA injects private dashboard data into index.html, so the
+        # boundary must cover page routes and static files as well as /api/*.
+        if not self._authorized(scope) or not self._same_origin(scope):
+            await JSONResponse({"detail": "invalid desktop session"}, status_code=403)(
+                scope, receive, send
+            )
+            return
 
         await self.app(scope, receive, send)
 
