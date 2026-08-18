@@ -71,10 +71,33 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn python_executable(root: &Path) -> PathBuf {
+fn python_launcher(root: &Path) -> PathBuf {
     std::env::var_os("WENQU_SIDECAR_PYTHON")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join(".venv").join("Scripts").join("python.exe"))
+}
+
+fn resolve_python_runtime(launcher: &Path) -> Result<PathBuf, String> {
+    let output = Command::new(launcher)
+        .args(["-c", "import sys; print(sys._base_executable)"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("failed to inspect Python sidecar runtime: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Python sidecar runtime inspection failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let executable = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if !executable.is_file() {
+        return Err(format!(
+            "Python base runtime not found: {}",
+            executable.display()
+        ));
+    }
+    Ok(executable)
 }
 
 fn wait_for_health(
@@ -177,17 +200,22 @@ fn stop_child(child: &mut Child, graceful_shutdown: Option<(u16, &str)>, timeout
 
 fn start_sidecar(trace: Option<&Path>) -> Result<ManagedSidecar, String> {
     let root = project_root();
-    let python = python_executable(&root);
-    if !python.is_file() {
+    let launcher = python_launcher(&root);
+    if !launcher.is_file() {
         return Err(format!(
             "Python sidecar runtime not found: {}",
-            python.display()
+            launcher.display()
         ));
     }
+    // Python 3.14's Windows venv launcher creates a second process. Resolve the
+    // base interpreter and launch it with the venv marker so Child tracks the
+    // actual FastAPI process rather than the short-lived redirector.
+    let python = resolve_python_runtime(&launcher)?;
     let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
     let mut child = Command::new(&python)
         .args(["-m", "backend.app.desktop_sidecar"])
         .current_dir(&root)
+        .env("__PYVENV_LAUNCHER__", &launcher)
         .env("WENQU_DESKTOP_TOKEN", &token)
         .env("WENQU_DESKTOP_PARENT_PIPE", "1")
         .stdin(Stdio::piped())

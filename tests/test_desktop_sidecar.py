@@ -7,7 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from backend.app.desktop_sidecar import _observe_parent_pipe, create_desktop_app
+from backend.app.desktop_sidecar import (
+    _bound_loopback_socket,
+    _observe_parent_pipe,
+    create_desktop_app,
+)
 
 
 TOKEN = "0123456789abcdef0123456789abcdef"
@@ -129,3 +133,18 @@ def test_parent_pipe_eof_requests_sidecar_shutdown() -> None:
     _observe_parent_pipe(shutdown_requested, BytesIO(b"parent-owned-pipe"))
 
     assert shutdown_requested.is_set()
+
+
+def test_operating_system_assigns_distinct_loopback_ports() -> None:
+    first = _bound_loopback_socket()
+    second = _bound_loopback_socket()
+    try:
+        first_host, first_port = first.getsockname()
+        second_host, second_port = second.getsockname()
+        assert first_host == second_host == "127.0.0.1"
+        assert first_port > 0
+        assert second_port > 0
+        assert first_port != second_port
+    finally:
+        first.close()
+        second.close()
