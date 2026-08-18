@@ -4,24 +4,24 @@
 > Claude 初评（前端/交互/联调视角），Codex 补"后端核对"列。认领功能开发时在"说明"里挂 Issue/PR 号。
 > 生成自 docs/SPEC_V2.md；新增/修改功能必须先走变更单（D-10）。
 
-**总计**：397 条 ｜ ✅ 37 ｜ 🟡 71 ｜ ⬜ 289（Claude 初评 + Codex 增量核对）
+**总计**：397 条 ｜ ✅ 28 ｜ 🟡 100 ｜ ⬜ 269（Claude 初评 + Codex 后端逐条核对并收敛差异）
 
-## APP ｜ Windows 客户端与本地运行（12 条：✅0 🟡1 ⬜11）
+## APP ｜ Windows 客户端与本地运行（12 条：✅0 🟡7 ⬜5）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
-| APP-01 | 独立桌面窗口 | P0 / 核心版 | ⬜ |  | 🟡 Spike：Tauri 窗口加载 Vue dist 已实机验证；未合入主线和正式包 |
-| APP-02 | 本地后端生命周期 | P0 / 核心版 | ⬜ |  | 🟡 Spike：desktop_sidecar 负责启动、就绪和退出；仍依赖源码 .venv |
-| APP-03 | 仅本机访问 | P0 / 核心版 | ⬜ |  | 🟡 Spike：随机回环端口加 Bearer 令牌；正式壳权限/CSP 审计未做 |
-| APP-04 | 单实例与窗口唤醒 | P0 / 核心版 | ⬜ |  | 🟡 Spike：10 次启动、9 次交接通过；现有窗口前台唤醒未验收 |
+| APP-01 | 独立桌面窗口 | P0 / 核心版 | 🟡 |  | 🟡 Spike：`tests/test_desktop_sidecar.py` 与 handoff 031 验证 Tauri 窗口加载 Vue dist；未合入主线和正式包 |
+| APP-02 | 本地后端生命周期 | P0 / 核心版 | 🟡 |  | 🟡 Spike：`desktop_sidecar` 启动、就绪和退出测试通过；仍依赖源码 `.venv` |
+| APP-03 | 仅本机访问 | P0 / 核心版 | 🟡 |  | 🟡 Spike：`test_api_rejects_requests_without_desktop_session`、`test_operating_system_assigns_distinct_loopback_ports` 覆盖 token 与随机回环端口；正式壳权限/CSP 审计未做 |
+| APP-04 | 单实例与窗口唤醒 | P0 / 核心版 | 🟡 |  | 🟡 Spike：`tools/tauri_poc_smoke.ps1` 覆盖 10 次启动、9 次交接；现有窗口前台唤醒未验收 |
 | APP-05 | 启动健康检查 | P0 / 核心版 | 🟡 | 迁移检查+迁移前备份已有；健康检查面板无 | 🟡 主线有迁移检查/迁移前备份；Spike 有 readiness，缺健康面板 |
-| APP-06 | 异常退出恢复 | P0 / 核心版 | ⬜ |  | 🟡 Spike：父进程强杀自停、陈旧锁恢复；安全模式/会话修复未做 |
+| APP-06 | 异常退出恢复 | P0 / 核心版 | 🟡 |  | 🟡 Spike 强杀与陈旧锁冒烟；主线 `practice_sessions/practice_answers` 可恢复，安全模式/通用草稿修复未做 |
 | APP-07 | 安装版 | P1 / 稳定版 | ⬜ |  | ⬜ 无 Tauri installer、签名或 clean-VM 证据 |
 | APP-08 | 便携版 | P1 / 稳定版 | ⬜ |  | ⬜ 现有 ZIP 加浏览器仅诊断快照，不是便携桌面版 |
 | APP-09 | 客户端通知与免打扰 | P1 / 稳定版 | ⬜ |  | ⬜ 无本地通知与免打扰后端 |
 | APP-10 | 安全更新与回滚 | P1 / 稳定版 | ⬜ |  | ⬜ 无签名更新、回滚和跳过版本机制 |
 | APP-11 | 文件关联 | P2 / 高完成度 | ⬜ |  | ⬜ 无文件关联注册与转发 |
-| APP-12 | 诊断日志包 | P1 / 稳定版 | ⬜ |  | 🟡 Spike trace 已脱敏；尚无可导出的诊断包和系统清单 |
+| APP-12 | 诊断日志包 | P1 / 稳定版 | 🟡 |  | 🟡 Spike Rust 测试 `bootstrap_trace_never_contains_the_session_token` 覆盖 trace 脱敏；尚无可导出 ZIP 和系统清单 |
 
 ## ONB ｜ 首次设置与学习者档案（10 条：✅0 🟡0 ⬜10）
 
@@ -97,7 +97,7 @@
 | PLN-13 | 周计划与日历 | P1 / 稳定版 | ⬜ |  | |
 | PLN-14 | 完成反馈与收尾 | P1 / 稳定版 | ⬜ |  | |
 
-## LIB ｜ 私人资源库、收件箱与采集（20 条：✅2 🟡8 ⬜10）
+## LIB ｜ 私人资源库、收件箱与采集（20 条：✅0 🟡13 ⬜7）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
@@ -107,17 +107,17 @@
 | LIB-04 | 字幕导入 | P1 / 稳定版 | ⬜ |  | ⬜ 无 caption_tracks/cues 与字幕校验 |
 | LIB-05 | 题库导入 | P0 / 核心版 | 🟡 | ESQ 导入导出为旧机成熟能力；CSV/JSON 映射无 | 🟡 import_jobs 加 ESQ/DOCX/PDF 草稿发布；CSV/JSON 映射与冲突策略不全 |
 | LIB-06 | 网页一键采集 | P2 / 高完成度 | ⬜ |  | ⬜ 无网页采集、HTML 快照或抓取失败保存 |
-| LIB-07 | 剪贴板与快速摘录 | P1 / 稳定版 | ⬜ |  | 🟡 JSON 文本导入可承接粘贴；缺类型识别、重复提示和原始副本模型 |
+| LIB-07 | 剪贴板与快速摘录 | P1 / 稳定版 | 🟡 |  | 🟡 `resources` JSON 文本导入可承接粘贴；缺类型识别、重复提示和原始副本模型 |
 | LIB-08 | 来源与版权备注 | P1 / 稳定版 | 🟡 | source/license/private_only 字段+表单已有 | 🟡 resources 有 source/source_url/author/license/private_only；购买日期与待确认无 |
-| LIB-09 | 原文件与解析版本分离 | P0 / 核心版 | ✅ | 原文件只读+解析版本+parser_version（0001） | 🟡 原文件独立存储加 parser_version；无 revision 链、差异和定位迁移 |
+| LIB-09 | 原文件与解析版本分离 | P0 / 核心版 | 🟡 | 原文件只读+解析版本+parser_version（0001） | 🟡 `resources.stored_path/parser_version`; `test_gbk_import_duplicate_and_restart_persistence`; 无 revision 链、差异和定位迁移 |
 | LIB-10 | 元数据与标签 | P0 / 核心版 | 🟡 | type/status/难度字段有；层级标签系统无 | 🟡 有 type/status/difficulty 等字段；无 tags/collections 与批量撤销 |
 | LIB-11 | 资源状态 | P1 / 稳定版 | 🟡 | inbox/active/archived/needs_review 已有；稍后读/完成无 | 🟡 有 inbox/active/archived/needs_review/trash；无 later/done 与状态历史 |
 | LIB-12 | 课程与多处引用 | P0 / 核心版 | ⬜ |  | ⬜ 无通用 resource_links 多态引用 |
-| LIB-13 | 重复检测与合并 | P1 / 稳定版 | ⬜ |  | 🟡 SHA-256 重复拒绝并返回 existing_id；无相似度、合并和预览 |
-| LIB-14 | 批量导入队列 | P1 / 稳定版 | ⬜ |  | 🟡 题库目录批量导入有 job 进度；未统一到资源批队列和取消令牌 |
+| LIB-13 | 重复检测与合并 | P1 / 稳定版 | 🟡 |  | 🟡 `resources.checksum`; `test_gbk_import_duplicate_and_restart_persistence` 覆盖 SHA-256 重复拒绝；无相似度、合并和预览 |
+| LIB-14 | 批量导入队列 | P1 / 稳定版 | 🟡 |  | 🟡 `import_jobs`; `tests/test_batch_import.py` 覆盖题库目录批导；未统一到资源批队列和取消令牌 |
 | LIB-15 | 全文与附件索引 | P1 / 稳定版 | 🟡 | FTS5 正文索引+搜索页+定位跳转；字幕/笔记/题目未入索引 | 🟡 resource_segments FTS5、重建和定位；未覆盖附件、题目与字幕 |
 | LIB-16 | 资源预览与打开原文件 | P0 / 核心版 | 🟡 | 解析正文预览=阅读器；打开原文件/定位文件夹无 | 🟡 解析正文可读；无打开原文件、定位文件夹和重定位 |
-| LIB-17 | 废纸篓与恢复 | P0 / 核心版 | ✅ | 软删除+trash_entries 登记+恢复 | 🟡 软删、7 日清理、恢复和永久删除有测试；影响预览与清理前备份不全 |
+| LIB-17 | 废纸篓与恢复 | P0 / 核心版 | 🟡 | 软删除+trash_entries 登记+恢复 | 🟡 `trash_entries/resources.deleted_at`; `test_search_progress_update_delete_and_restore`; 影响预览与清理前备份不全 |
 | LIB-18 | 资源健康检查 | P1 / 稳定版 | ⬜ |  | ⬜ 无资源健康扫描与 health_issue |
 | LIB-19 | 数据目录迁移 | P1 / 稳定版 | ⬜ |  | ⬜ 无数据根目录迁移、校验和回滚 |
 | LIB-20 | 资源导出与归档包 | P1 / 稳定版 | ⬜ |  | ⬜ 无按资源导出原件、Markdown/JSON 与标注归档包 |
@@ -145,7 +145,7 @@
 | STU-17 | 回滚与学习记录迁移 | P1 / 稳定版 | ⬜ |  | |
 | STU-18 | 模板库 | P2 / 高完成度 | ⬜ |  | |
 
-## ACT ｜ 通用学习活动、作答与评分引擎（26 条：✅0 🟡3 ⬜23）
+## ACT ｜ 通用学习活动、作答与评分引擎（26 条：✅0 🟡10 ⬜16）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
@@ -155,11 +155,11 @@
 | ACT-04 | 多选与部分得分 | P1 / 稳定版 | ⬜ |  | ⬜ 无多选集合、部分得分与扣分策略 |
 | ACT-05 | 判断 | P0 / 核心版 | ⬜ |  | ⬜ 无布尔/多陈述判断响应模型 |
 | ACT-06 | 文本填空 | P0 / 核心版 | ⬜ |  | ⬜ 无多空、逐空评分和可配置 normalizer |
-| ACT-07 | 完形填空 | P0 / 核心版 | ⬜ |  | 🟡 旧机有选择式完形题组；无 passage/blank/shared-bank 统一模型 |
+| ACT-07 | 完形填空 | P0 / 核心版 | 🟡 |  | 🟡 `units/questions/options`; `test_2026_whole_paper_grading`; 无 passage/blank/shared-bank 统一模型 |
 | ACT-08 | 匹配 | P1 / 稳定版 | ⬜ |  | ⬜ 无匹配活动与一对多规则 |
 | ACT-09 | 排序 | P1 / 稳定版 | ⬜ |  | ⬜ 无排序活动与局部得分 |
 | ACT-10 | 句子重组 | P1 / 稳定版 | ⬜ |  | ⬜ 无句子重组与多合法序列 |
-| ACT-11 | 拼写输入 | P0 / 核心版 | ⬜ |  | 🟡 词汇 spelling 卡有后端规范化和作答留痕；无 edit-distance/error-spans 合同 |
+| ACT-11 | 拼写输入 | P0 / 核心版 | 🟡 |  | 🟡 `vocabulary_cards/review_logs`; `test_spelling_variant_entry_state_and_manual_card_pause_are_independent`; 无 error-spans 合同 |
 | ACT-12 | 听写 | P1 / 稳定版 | ⬜ |  | ⬜ 无句子听写、token 对齐和音频降级评分 |
 | ACT-13 | 中译英/英译中 | P1 / 稳定版 | ⬜ |  | ⬜ 无翻译活动、参考答案/关键词与结构化自评 |
 | ACT-14 | 短回答 | P1 / 稳定版 | ⬜ |  | ⬜ 无短回答 rubric 或待自评状态 |
@@ -167,31 +167,31 @@
 | ACT-16 | 录音回答 | P1 / 稳定版 | ⬜ |  | ⬜ 无录音资产与多次口语尝试 |
 | ACT-17 | 跟读 | P1 / 稳定版 | ⬜ |  | ⬜ 无跟读参考音频/录音对比事实 |
 | ACT-18 | 图片描述 | P2 / 高完成度 | ⬜ |  | ⬜ 无图片描述活动 |
-| ACT-19 | 阅读任务 | P0 / 核心版 | ⬜ |  | 🟡 resource_progress 可断点阅读；无完成规则、问题引用和提交 |
+| ACT-19 | 阅读任务 | P0 / 核心版 | 🟡 |  | 🟡 `resource_progress`; `test_search_progress_update_delete_and_restore`; 无完成规则、问题引用和提交 |
 | ACT-20 | 听看任务 | P1 / 稳定版 | ⬜ |  | ⬜ 无统一媒体进度、字幕模式与观看完成规则 |
-| ACT-21 | 自评活动 | P0 / 核心版 | ⬜ |  | 🟡 review_logs 分开 auto_rating/final_rating；无通用 rubric 维度 |
+| ACT-21 | 自评活动 | P0 / 核心版 | 🟡 |  | 🟡 `review_logs.auto_rating/final_rating`; `test_all_six_card_types_share_one_fsrs_grade_core`; 无通用 rubric 维度 |
 | ACT-22 | 自动保存与恢复 | P0 / 核心版 | 🟡 | 练习会话断点续做（旧机）；统一草稿模型无 | 🟡 practice_answers 与 study_sessions 可恢复；无统一草稿 revision/冲突协议 |
-| ACT-23 | 提交与锁定 | P0 / 核心版 | ⬜ |  | 🟡 practice 会话/单元提交后锁定；无统一 submission_policy 和评分失败状态 |
-| ACT-24 | 结构化反馈 | P1 / 稳定版 | ⬜ |  | 🟡 旧考试解释、错题证据和词汇 auto_correct 可用；无统一 feedback_items |
-| ACT-25 | 尝试历史 | P1 / 稳定版 | ⬜ |  | 🟡 practice_answer_events 与 review_logs 保留历史；无内容版本对比/回放 |
+| ACT-23 | 提交与锁定 | P0 / 核心版 | 🟡 |  | 🟡 `practice_sessions/practice_unit_submissions`; `test_paper_unit_can_be_submitted_independently`; 无统一 submission_policy 和评分失败状态 |
+| ACT-24 | 结构化反馈 | P1 / 稳定版 | 🟡 |  | 🟡 `wrong_stats/review_logs`; 旧考试解释与词汇 auto_correct 可用；无统一 feedback_items |
+| ACT-25 | 尝试历史 | P1 / 稳定版 | 🟡 |  | 🟡 `practice_answer_events/review_logs`; `test_paper_unit_can_be_submitted_independently`; 无内容版本对比/回放 |
 | ACT-26 | 统一学习事件 | P0 / 核心版 | 🟡 | learning_events（0004）已写任务/复习/练习部分动词 | 🟡 learning_events 已供日报重算；缺 actor/context/version/outbox 与健康告警 |
 
-## VOC ｜ 词汇、短语、语境与 FSRS（28 条：✅13 🟡12 ⬜3）
+## VOC ｜ 词汇、短语、语境与 FSRS（28 条：✅9 🟡16 ⬜3）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
-| VOC-01 | 词元/词形/词义分离 | P0 / 核心版 | ✅ | lexeme 归一+forms/senses/relations 子表（0002） | 🟡 0002 建 senses/forms/relations 并做词形归一；人工合并撤销链不完整 |
+| VOC-01 | 词元/词形/词义分离 | P0 / 核心版 | 🟡 | lexeme 归一+forms/senses/relations 子表（0002） | 🟡 `vocabulary_senses/forms/relations`; `test_0002_migrates_legacy_vocabulary_to_forward_cards`; 人工合并撤销链不完整 |
 | VOC-02 | 单词、短语和表达 | P0 / 核心版 | 🟡 | 短语收藏可用；类型细分（idiom/collocation）未区分 | 🟡 vocabulary_entries 可收多词表达；无 word/phrase/collocation/idiom 类型事实 |
 | VOC-03 | 多词义管理 | P1 / 稳定版 | 🟡 | senses 独立存储；掌握度仍按词不按义 | 🟡 senses 独立存储；调度与 mastery 仍按词条 |
 | VOC-04 | 音标与发音变体 | P1 / 稳定版 | 🟡 | UK/US 音标+浏览器 TTS；多说话人/真人音频无 | 🟡 词典补 UK/US 音标；无 pronunciations、多说话人和音频 Provider |
 | VOC-05 | 普通释义与语境释义 | P0 / 核心版 | ✅ | 常用/语境释义分离+user_edited 锁定 | ✅ common/contextual 释义分离，user_edited 防静默覆盖 |
-| VOC-06 | 语境出现记录 | P0 / 核心版 | ✅ | occurrences+resource/segment 回链+跳回原文 | 🟡 occurrences 可回链 resource/segment；资源版本迁移与快照回退未做 |
+| VOC-06 | 语境出现记录 | P0 / 核心版 | 🟡 | occurrences+resource/segment 回链+跳回原文 | 🟡 `vocabulary_occurrences`; `test_selection_enriches_merges_occurrences_and_generates_cards`; 资源版本迁移与快照回退未做 |
 | VOC-07 | 遇见次数与间隔 | P1 / 稳定版 | 🟡 | encounter_count+同语境去重；unique_sources 统计无 | 🟡 encounter_count 加同语境去重；unique_sources 与间隔统计不全 |
 | VOC-08 | 词族与派生 | P1 / 稳定版 | 🟡 | relations family 数据承载有；UI 与练习无 | 🟡 relations 可存 family；无自动建议确认与专项练习契约 |
 | VOC-09 | 搭配与短语动词 | P1 / 稳定版 | 🟡 | collocation 关系+搭配卡引擎有（缺离线数据默认关） | 🟡 collocation relation 与卡片生成器已有；离线搭配数据缺失 |
 | VOC-10 | 同义/反义/易混辨析 | P1 / 稳定版 | 🟡 | synonym/antonym 关系+旧辨析展示；对比表无 | 🟡 synonym/antonym/similar 可存；语域、互换限制和来源审计不全 |
-| VOC-11 | 学习状态 | P0 / 核心版 | ✅ | known/learning/ignored/paused/focus 五状态+生词本切换 | 🟡 五状态与暂停入口可用；无 status_history/manual_lock 完整事实 |
-| VOC-12 | 笔记与记忆提示 | P0 / 核心版 | ✅ | note+memory_hint 字段+卡片/生词本展示 | 🟡 note/memory_hint 可写且进卡片；无笔记版本 |
+| VOC-11 | 学习状态 | P0 / 核心版 | 🟡 | known/learning/ignored/paused/focus 五状态+生词本切换 | 🟡 `vocabulary_entries.study_status`; `test_spelling_variant_entry_state_and_manual_card_pause_are_independent`; 无 status_history/manual_lock |
+| VOC-12 | 笔记与记忆提示 | P0 / 核心版 | 🟡 | note+memory_hint 字段+卡片/生词本展示 | 🟡 `vocabulary_entries.note/memory_hint`; StudyCard 载荷已接；无笔记版本 |
 | VOC-13 | 一条笔记多张卡 | P1 / 稳定版 | ✅ | 一词多卡型（六类）+题型开关（词级） | ✅ 六类 card 事实与词级题型开关已实现，调度仍按词 |
 | VOC-14 | 英→中识别卡 | P0 / 核心版 | ✅ | 认词卡+教学模式首照面 | ✅ forward 卡及首次教学载荷由后端生成 |
 | VOC-15 | 中→英产出卡 | P0 / 核心版 | ✅ | 反向卡（选择/主动回忆双形态） | ✅ reverse 卡支持选择/主动输入载荷与后端复判 |
@@ -375,18 +375,18 @@
 | EXM-21 | 目标分数与差距计划 | P1 / 稳定版 | ⬜ |  | |
 | EXM-22 | 试卷/结果开放导出 | P1 / 稳定版 | 🟡 | ESQ 导出（题库交换）；成绩报告导出无 | |
 
-## REV ｜ 统一复习、错题、掌握度与自适应（20 条：✅6 🟡8 ⬜6）
+## REV ｜ 统一复习、错题、掌握度与自适应（20 条：✅4 🟡11 ⬜5）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
-| REV-01 | 统一复习项模型 | P0 / 核心版 | ✅ | 统一 review_items（vocabulary+wrong_question），0006 词级 | 🟡 review_items 统一 vocabulary/wrong_question 与稳定日志；目标修复状态不全 |
+| REV-01 | 统一复习项模型 | P0 / 核心版 | 🟡 | 统一 review_items（vocabulary+wrong_question），0006 词级 | 🟡 `review_items/review_logs`; `test_wrong_answer_creates_one_review_item_and_grading_is_idempotent`; 目标修复状态不全 |
 | REV-02 | 复习活动变体 | P1 / 稳定版 | ⬜ |  | ⬜ 无跨内容 review_variants/mastery_dimension 选择策略 |
-| REV-03 | FSRS/可替换调度器 | P0 / 核心版 | ✅ | FSRS+scheduler/algorithm_version 字段（可替换预留） | 🟡 scheduler/version 与固定 py-fsrs 有；升级模拟、回退工具未做 |
+| REV-03 | FSRS/可替换调度器 | P0 / 核心版 | 🟡 | FSRS+scheduler/algorithm_version 字段（可替换预留） | 🟡 `review_items.scheduler/scheduler_version`; `test_new_card_advances_through_learning_into_review`; 升级模拟/回退未做 |
 | REV-04 | 知识掌握度 | P1 / 稳定版 | 🟡 | mastery_states 基础版（0004） | 🟡 mastery_states 加 question_skills 最简证据；多维/人工锁定无 |
-| REV-05 | 多知识点权重 | P1 / 稳定版 | ⬜ |  | 🟡 question_skills 支持多关联；无 weight/role |
+| REV-05 | 多知识点权重 | P1 / 稳定版 | 🟡 |  | 🟡 `question_skills`; `test_five_linked_questions_update_simple_mastery`; 支持多关联但无 weight/role |
 | REV-06 | 错误类型记录 | P1 / 稳定版 | 🟡 | 错题错误类型基础字段 | 🟡 错题归因可产 primary/secondary cause；无通用 error_records 多标签事实 |
 | REV-07 | 高频错题与错因趋势 | P0 / 核心版 | ✅ | 错题中心+wrong_stats+高频排序 | ✅ wrong_stats、近期结果、历史答案与高频排序后端已实现 |
-| REV-08 | 错题重做门控 | P1 / 稳定版 | 🟡 | FSRS 间隔天然门控；显式冷却/补救链无 | ⬜ 无 retry_gate、冷却和 remediation_state；FSRS 到期不等于显式门控 |
+| REV-08 | 错题重做门控 | P1 / 稳定版 | ⬜ | FSRS 间隔天然门控；显式冷却/补救链无 | ⬜ 无 retry_gate 表/冷却/补救测试；FSRS 到期不等于显式门控 |
 | REV-09 | 交错练习 | P1 / 稳定版 | ⬜ |  | ⬜ 无 interleaving_policy/topic_distance |
 | REV-10 | 每日复习上限 | P0 / 核心版 | ✅ | 每日复习上限 | ✅ daily_review_max 与到期优先队列已实现 |
 | REV-11 | 未来负荷预测 | P1 / 稳定版 | 🟡 | 7 日到期预测（overview）；模拟与月度无 | 🟡 overview 有 7 日 due forecast；分钟误差、模拟和月度无 |
@@ -394,7 +394,7 @@
 | REV-13 | 轻松日/休息日 | P1 / 稳定版 | ⬜ |  | ⬜ 无 easy/rest day 事实和自动恢复 |
 | REV-14 | 考试冲刺权重 | P1 / 稳定版 | ✅ | 考试冲刺（计划快照+自动恢复） | ✅ sprint 有计划快照、预览、激活与删除恢复 |
 | REV-15 | 顽固内容处置 | P1 / 稳定版 | 🟡 | leech 检测；处置流程无 | 🟡 leech 检测和计数有；拆分/换材料/处置跟踪无 |
-| REV-16 | 推荐原因和证据 | P1 / 稳定版 | ⬜ |  | 🟡 daily_tasks/generated_by_rule 有基础原因；无 evidence_refs 和反馈纠错 |
+| REV-16 | 推荐原因和证据 | P1 / 稳定版 | 🟡 |  | 🟡 `daily_tasks.generated_by_rule`; `test_today_tasks_are_idempotent_carried_and_completable`; 无 evidence_refs/反馈纠错 |
 | REV-17 | 人工控制 | P0 / 核心版 | 🟡 | 暂停/恢复有；改到期/重置/批量无 | 🟡 suspend/unsuspend 有；改 due、重置、批量撤销无 |
 | REV-18 | 复习会话模式 | P0 / 核心版 | 🟡 | 混合会话；模式选择（单技能/快速/深度）无 | 🟡 词汇/错题队列与会话持久化有；无 quick/deep/single-skill blueprint |
 | REV-19 | 复习历史与可回放 | P1 / 稳定版 | 🟡 | review_logs 全量记录；UI 时间线无 | 🟡 review_logs 保留评分与 FSRS 前后状态；无内容快照和回放 API |
@@ -443,7 +443,7 @@
 | ANA-17 | 报告导出 | P1 / 稳定版 | ⬜ |  | |
 | ANA-18 | 自定义仪表盘 | P2 / 高完成度 | ⬜ |  | |
 
-## DAT ｜ 数据安全、备份、迁移、导入导出与系统寿命（20 条：✅9 🟡4 ⬜7）
+## DAT ｜ 数据安全、备份、迁移、导入导出与系统寿命（20 条：✅8 🟡7 ⬜5）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
@@ -453,20 +453,20 @@
 | DAT-04 | SQLite | P0 / 核心版 | ✅ | SQLite Backup API 一致快照 | ✅ SQLite Backup API 生成一致数据库快照 |
 | DAT-05 | 资源文件清单和哈希 | P0 / 核心版 | ✅ | 资源文件 manifest+sha256 | ✅ 备份 manifest 记录资源清单、大小与 SHA-256 |
 | DAT-06 | 自动备份策略 | P0 / 核心版 | ⬜ |  | ⬜ 无定时/空闲/退出备份策略与保留轮换 |
-| DAT-07 | 手动完整备份 | P0 / 核心版 | ✅ | 手动完整备份+备注 | ✅ 手动完整备份含数据库、资源和备注 |
+| DAT-07 | 手动完整备份 | P0 / 核心版 | 🟡 | 手动完整备份已完成；用户备注未实现 | 🟡 **由 ✅ 改 🟡**：`BackupCreate` 仅有 kind；`test_create_list_and_verify_backup_package` 覆盖完整包，但无用户 note/取消 |
 | DAT-08 | 备份校验 | P0 / 核心版 | ✅ | 备份校验（quick_check+manifest+哈希抽验） | ✅ quick_check、manifest 与哈希抽验后端已实现 |
 | DAT-09 | 恢复预览 | P1 / 稳定版 | ✅ | 恢复预览 dry_run（版本/数量/差异） | ✅ restore dry_run 返回版本、数量和差异预览 |
 | DAT-10 | 恢复前再备份 | P0 / 核心版 | ✅ | 恢复前自动快照 | ✅ 正式恢复前强制生成 pre-restore 快照 |
 | DAT-11 | 原子恢复与回滚 | P0 / 核心版 | ✅ | 原子恢复+中断回滚（强杀测试覆盖） | ✅ 临时目录校验、原子替换和中断回滚有强杀测试 |
 | DAT-12 | 数据库完整性检查 | P1 / 稳定版 | 🟡 | 迁移时 quick_check；定期深度检查面板无 | 🟡 迁移/备份校验执行 quick_check；无周期深检与修复面板 |
-| DAT-13 | 孤立/缺失文件检测 | P1 / 稳定版 | ⬜ |  | 🟡 备份校验能发现 manifest 缺失/哈希错；无全库孤立文件扫描 |
+| DAT-13 | 孤立/缺失文件检测 | P1 / 稳定版 | 🟡 |  | 🟡 `manifest.files`; `test_corrupt_fixture_is_rejected_without_touching_database`; 无全库孤立文件扫描 |
 | DAT-14 | 路径迁移与重定位 | P1 / 稳定版 | ⬜ |  | ⬜ 无路径根重定位、复制/校验/回滚流程 |
 | DAT-15 | 开放文本导出 | P0 / 核心版 | ⬜ |  | ⬜ 无 Markdown/JSON 开放文本全量导出 |
 | DAT-16 | 词汇/卡片迁出 | P1 / 稳定版 | ⬜ |  | ⬜ 无词汇、卡片和复习状态迁出 |
 | DAT-17 | 题库标准映射 | P2 / 高完成度 | 🟡 | ESQ 成熟；QTI 无 | 🟡 ESQ 1.0 导入导出成熟；无 QTI 映射 |
 | DAT-18 | 学习事件导出 | P1 / 稳定版 | ⬜ |  | ⬜ 无 learning_events 导出与字段说明 |
 | DAT-19 | 可携带完整归档包 | P1 / 稳定版 | 🟡 | 备份包=库+资源+manifest；跨机恢复向导无 | 🟡 完整备份包可恢复；跨机路径修复向导和 portability 验收未做 |
-| DAT-20 | 数据保留与清理 | P1 / 稳定版 | ⬜ |  | 🟡 回收站到期清理有；无缓存/日志/旧备份统一保留策略 |
+| DAT-20 | 数据保留与清理 | P1 / 稳定版 | 🟡 |  | 🟡 `trash_entries.purge_after`; `test_purge_deletes_paper_and_children`; 无缓存/日志/旧备份统一策略 |
 
 ## ACC ｜ 设置、快捷键、可访问性与低干扰体验（18 条：✅1 🟡4 ⬜13）
 
@@ -491,19 +491,19 @@
 | ACC-17 | 错误提示与恢复动作 | P0 / 核心版 | 🟡 | 错误提示"为什么+怎么办"规范执行中 | |
 | ACC-18 | 设置导入导出 | P2 / 高完成度 | ⬜ |  | |
 
-## EXT ｜ Provider、插件与可选 AI 层（12 条：✅0 🟡6 ⬜6）
+## EXT ｜ Provider、插件与可选 AI 层（12 条：✅0 🟡7 ⬜5）
 
 | ID | 功能 | 优先级 | 状态 | 说明（Claude 初评） | 后端核对（Codex） |
 |---|---|---|---|---|---|
 | EXT-01 | Provider | P0 / 核心版 | ⬜ |  | ⬜ 无统一 Provider 注册、能力声明和健康状态 |
 | EXT-02 | 词典 | P0 / 核心版 | 🟡 | ECDICT 本地词典（硬编码，未走统一 Provider 接口） | 🟡 ECDICT 本地查询与词书导入有；未接 Provider 接口/版本迁移 |
 | EXT-03 | 翻译 | P1 / 稳定版 | 🟡 | 旧机模型翻译队列（可关闭） | 🟡 可选模型翻译队列有缓存和失败状态；未接统一 Provider |
-| EXT-04 | TTS | P1 / 稳定版 | 🟡 | SpeechSynthesis 检测+降级；后端 SAPI 兜底未接 | ⬜ 后端无 TTS Provider；当前 SpeechSynthesis 属前端降级能力 |
+| EXT-04 | TTS | P1 / 稳定版 | 🟡 | SpeechSynthesis 检测+降级；后端 SAPI 兜底未接 | 🟡 总体因前端 SpeechSynthesis 降级保留部分状态；后端为 ⬜，无 TTS Provider/SAPI 兜底 |
 | EXT-05 | ASR | P1 / 稳定版 | ⬜ |  | ⬜ 无 ASR Provider |
 | EXT-06 | 发音 | P2 / 高完成度 | ⬜ |  | ⬜ 无发音评分 Provider 与量表降级 |
 | EXT-07 | 语法检查 | P1 / 稳定版 | ⬜ |  | ⬜ 无语法检查 Provider |
 | EXT-08 | OCR | P2 / 高完成度 | ⬜ |  | ⬜ 无 OCR Provider；扫描 PDF 只标 needs_review |
-| EXT-09 | 内容解析 | P1 / 稳定版 | ⬜ |  | 🟡 PDF/DOCX/TXT/MD 解析服务有；未抽象 Provider/版本兼容接口 |
+| EXT-09 | 内容解析 | P1 / 稳定版 | 🟡 |  | 🟡 `services/resources.py/docx_parser.py`; `test_pdf_docx_and_scanned_pdf_fallback`; 未抽象 Provider/版本兼容接口 |
 | EXT-10 | 复习调度 | P1 / 稳定版 | 🟡 | scheduler 字段预留可替换；迁移工具无 | 🟡 scheduler/version 字段与 py-fsrs 有；无多调度 Provider 和迁移工具 |
 | EXT-11 | 可选 | P2 / 可选增强 | 🟡 | 旧机 AI 助手=可关闭 AI 层雏形（未走统一接口） | 🟡 AI 层可关闭且失败可降级；未统一标识 Provider 影响范围 |
 | EXT-12 | 任务管理、超时与缓存 | P0 / 核心版 | 🟡 | 导入任务进度/取消部分；统一任务框架无 | 🟡 import_jobs、模型超时/缓存有局部实现；无统一任务、取消和重试框架 |
