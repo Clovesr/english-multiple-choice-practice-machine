@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ArrowLeft, BookOpen, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, BookOpen, FileUp, Loader2 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import type { ApiError } from '../api'
+import { api, type ApiError } from '../api'
 import { type Wordbook, activateWordbookPlan, deactivateWordbookPlan, listWordbooks } from '../services/study'
 
 const items = ref<Wordbook[]>([])
@@ -52,6 +52,46 @@ async function deactivate(book: Wordbook) {
   }
 }
 
+// —— 自定义词表导入（VOC-27 前端面 / A8.3；POST /wordbooks/import multipart） ——
+const importInput = ref<HTMLInputElement | null>(null)
+const importName = ref('')
+const importing = ref(false)
+const importReport = ref<{ name: string, matched: number, unmatched: Array<{ term: string }> } | null>(null)
+
+function pickImportFile() {
+  importInput.value?.click()
+}
+
+async function onImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importing.value = true
+  loadError.value = ''
+  importReport.value = null
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('name', importName.value.trim() || file.name.replace(/\.(txt|csv)$/i, ''))
+    const result = await api<{ wordbook: { name: string }, matched: number, unmatched: Array<{ term: string }> }>(
+      '/wordbooks/import',
+      { method: 'POST', body: form },
+    )
+    importReport.value = {
+      name: result.wordbook?.name ?? importName.value,
+      matched: result.matched ?? 0,
+      unmatched: result.unmatched ?? [],
+    }
+    importName.value = ''
+    await load()
+  } catch (cause) {
+    loadError.value = `词表导入失败：${(cause as Error).message}`
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -78,6 +118,21 @@ onMounted(load)
         <label style="color:var(--muted);font-size:13px">每日新词量</label>
         <input v-model.number="dailyNew" type="number" min="0" max="200" style="width:90px;min-height:40px;border:1px solid var(--line-strong);border-radius:10px;padding:6px 10px;background:var(--surface-solid);color:var(--ink)" />
         <span style="color:var(--muted);font-size:12px">激活词书时生效；0 表示只复习不学新词</span>
+        <span style="flex:1" />
+        <input v-model="importName" placeholder="词表名称（可选）" style="width:150px;min-height:40px;border:1px solid var(--line-strong);border-radius:10px;padding:6px 10px;background:var(--surface-solid);color:var(--ink)" />
+        <button class="button secondary compact" type="button" :disabled="importing" @click="pickImportFile">
+          <Loader2 v-if="importing" :size="15" class="spinning" /><FileUp v-else :size="15" />导入词表（TXT/CSV）
+        </button>
+        <input ref="importInput" type="file" accept=".txt,.csv" style="display:none" @change="onImportFile" />
+      </div>
+
+      <div v-if="importReport" class="card" style="margin-bottom:16px;display:grid;gap:8px;background:var(--primary-soft)">
+        <strong>「{{ importReport.name }}」导入完成：匹配词典 {{ importReport.matched }} 个<template v-if="importReport.unmatched.length">，未匹配 {{ importReport.unmatched.length }} 个</template></strong>
+        <p v-if="importReport.unmatched.length" style="margin:0;font-size:13px;color:var(--muted)">
+          未匹配的词已按你文件里的释义建档（无释义的待补全，不会生成空白卡片）：
+          {{ importReport.unmatched.slice(0, 10).map(u => u.term).join('、') }}<template v-if="importReport.unmatched.length > 10"> 等 {{ importReport.unmatched.length }} 个</template>
+        </p>
+        <div><button class="button compact" type="button" @click="importReport = null">知道了</button></div>
       </div>
 
       <div v-if="items.length" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">

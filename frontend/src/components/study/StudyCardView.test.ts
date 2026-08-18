@@ -27,7 +27,7 @@ function makeCard(overrides: Partial<StudyCard> = {}): StudyCard {
   }
 }
 
-const mountCard = (card: StudyCard) => mount(StudyCardView, { props: { card, speechAvailable: true } })
+const mountCard = (card: StudyCard) => mount(StudyCardView, { props: { card, speechAvailable: true }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
 
 describe('正向卡（reveal 流）', () => {
   it('先隐藏答案，空格/按钮翻面后可评分', async () => {
@@ -94,6 +94,7 @@ describe('听音卡降级（十条之 9 / A10.4）', () => {
   it('无语音能力时给出降级说明且可跳过', async () => {
     const wrapper = mount(StudyCardView, {
       props: { card: makeCard({ card_type: 'listening', prompt: { tts_text: 'resilience' }, answer: { accept: ['resilience'] } }), speechAvailable: false },
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     expect(wrapper.text()).toContain('没有可用的英语语音')
     await wrapper.find('.study-foot button').trigger('click') // 第一个按钮=稍后再来
@@ -140,6 +141,7 @@ describe('新词首照面教学模式（任何题型）', () => {
         speechAvailable: true,
         drill: true,
       },
+      global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
     })
     expect(wrapper.find('.spelling-input').exists()).toBe(true)
   })
